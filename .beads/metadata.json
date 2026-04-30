@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "lowspot",
+  "project_id": "60210d35-afc9-4c1e-a5bc-8ceb03e901c7"
+}
