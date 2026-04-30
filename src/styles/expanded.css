@@ -1,0 +1,257 @@
+.expanded-view {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+  flex: 1;
+}
+
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 10px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar nav button {
+  text-align: left;
+  background: transparent;
+}
+
+.sidebar nav button.active {
+  background: var(--row-selected);
+}
+
+.sidebar .sdk-message {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sidebar .logout {
+  margin-top: auto;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.content-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.content-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapse-inline {
+  display: none;
+}
+
+.content-header form {
+  display: flex;
+  gap: 6px;
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.playback-controls .transport-button {
+  width: 38px;
+  padding-inline: 0;
+}
+
+.playback-controls .play-toggle {
+  min-width: 62px;
+}
+
+.playback-controls .shuffle-toggle {
+  min-width: 108px;
+}
+
+.playback-controls .repeat-toggle {
+  min-width: 104px;
+}
+
+.playback-controls .toggle-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+}
+
+.playback-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.playback-controls input[type='range'] {
+  width: 100px;
+}
+
+.table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.expanded-now-playing {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.expanded-now-playing .track {
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expanded-now-playing .meta {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expanded-now-playing .progress-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.expanded-now-playing .progress-line-track {
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.expanded-now-playing .progress-line-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.expanded-now-playing .progress-row input[type='range'] {
+  width: 100%;
+}
+
+.settings-note {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.table-head {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(220px, 1.2fr) 120px;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.table-body {
+  overflow: auto;
+  min-height: 0;
+}
+
+.table-body .empty {
+  margin: 18px 12px;
+  color: var(--text-muted);
+}
+
+.row {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(42, 50, 58, 0.55);
+  border-radius: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(220px, 1.2fr) 120px;
+  gap: 12px;
+  text-align: left;
+  padding: 9px 12px;
+  background: transparent;
+}
+
+.row:hover {
+  background: var(--row-hover);
+}
+
+.row.selected {
+  background: var(--row-selected);
+}
+
+.row span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 920px) {
+  .expanded-view {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar header button {
+    display: none;
+  }
+
+  .collapse-inline {
+    display: inline-flex;
+  }
+
+  .table-head,
+  .row {
+    grid-template-columns: minmax(180px, 1.4fr) minmax(140px, 1fr) 88px;
+  }
+}

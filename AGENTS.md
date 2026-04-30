@@ -2,6 +2,8 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
+Use `bd` for task tracking. Run `bd ready --json` to find next work. Track discovered work in beads. Close beads only when implemented and verified.
+
 ## Quick Reference
 
 ```bash
