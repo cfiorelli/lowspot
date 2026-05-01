@@ -22,7 +22,7 @@ import {
   mockSearch,
 } from './spotify/mockData';
 import { useAppStore } from './state/store';
-import { EXPANDED_SIZE, LEAN_SIZE, LOGIN_SIZE, MIN_SIZE, POLL_INTERVAL_MS } from './utils/constants';
+import { EXPANDED_SIZE, LEAN_SIZE, LIBRARY_PAGE_DELAY_MS, LOGIN_SIZE, MIN_SIZE, POLL_INTERVAL_MS } from './utils/constants';
 import {
   loadCachedLikedSongs, saveCachedLikedSongs,
   loadCachedLikedAlbums, saveCachedLikedAlbums,
@@ -35,8 +35,11 @@ import './styles/lean.css';
 import './styles/expanded.css';
 
 const LIBRARY_PAGE_SIZE = 50;
-const MAX_INITIAL_LIBRARY_PAGES = 1;
-const MAX_INCREMENTAL_LIBRARY_PAGES = 2;
+// No cap on first-run pages: we paginate until the end with 500ms delays
+// (60 req/30s), well within the 100 req/30s proactive budget in api.ts.
+const MAX_INITIAL_LIBRARY_PAGES = Infinity;
+// Incrementally fetch up to 1000 new songs since last sync.
+const MAX_INCREMENTAL_LIBRARY_PAGES = 20;
 const MOCK_MODE = import.meta.env.VITE_LOWSPOT_MOCK === '1';
 
 const countSearchResults = (results: ReturnType<typeof mockSearch>): number =>
@@ -328,7 +331,6 @@ function App() {
   };
 
   const refreshPlayback = async () => {
-    if (sectionLoadPendingRef.current) return;
     if (refreshPlaybackPendingRef.current) return;
     refreshPlaybackPendingRef.current = true;
     try {
@@ -447,6 +449,10 @@ function App() {
       apiRef.current = new SpotifyApiClient(activeTokens.accessToken);
 
       setInfoMessage('Spotify session ready.');
+      // Immediately fetch playback state so LeanBar shows the current track.
+      void refreshPlayback();
+      // Trigger the active nav's data load (the [activeNav] effect fired while apiRef was null).
+      void loadSectionForNav(useAppStore.getState().activeNav);
     } finally {
       setupInProgressRef.current = false;
     }
@@ -688,8 +694,10 @@ function App() {
           if (hitCache || !page.next) break;
           offset += page.limit;
 
+          const inProgress = newEntries.length + cached.length;
           setLikedSongs([...newEntries.map((e) => e.track), ...cached.map((e) => e.track)]);
-          await new Promise((r) => setTimeout(r, 500));
+          if (total > 0) setInfoMessage(`Loading liked songs… ${inProgress} of ${total}`);
+          await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
 
         const seen = new Set<string>();
@@ -744,7 +752,8 @@ function App() {
 
           if (hitCache || !page.next) break;
           offset += page.limit;
-          await new Promise((r) => setTimeout(r, 500));
+          if (total > 0) setInfoMessage(`Loading liked albums… ${newEntries.length + cached.length} of ${total}`);
+          await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
 
         const seen = new Set<string>();
@@ -888,10 +897,7 @@ function App() {
 
     const timer = setInterval(() => {
       void ensureFreshToken();
-      const { activeNav: currentNav, mode: currentMode } = useAppStore.getState();
-      if (currentMode === 'expanded' && (currentNav === 'Now Playing' || currentNav === 'Queue')) {
-        void refreshPlayback();
-      }
+      void refreshPlayback();
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(timer);

@@ -1,4 +1,4 @@
-import { SPOTIFY_API_BASE } from '../utils/constants';
+import { RATE_LIMIT_BUDGET, RATE_LIMIT_WINDOW_MS, SPOTIFY_API_BASE } from '../utils/constants';
 import { getSpotifyCooldown, setSpotifyCooldown } from '../utils/spotifyCooldown';
 import type {
   Device,
@@ -37,6 +37,10 @@ export class SpotifyApiClient {
   private rateLimitedUntil = 0;
   private cancelled = false;
 
+  // Sliding-window log: timestamps of recent requests.
+  // Enforces RATE_LIMIT_BUDGET req / RATE_LIMIT_WINDOW_MS proactively.
+  private requestLog: number[] = [];
+
   constructor(accessToken: string) {
     this.accessToken = accessToken;
   }
@@ -53,16 +57,58 @@ export class SpotifyApiClient {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private async doRequest<T>(path: string, init: RequestInit, attempt: number): Promise<T> {
+  // Delay if we have issued RATE_LIMIT_BUDGET requests in the last RATE_LIMIT_WINDOW_MS.
+  // This is the primary protection against 429s — prevents them from occurring.
+  private async waitForBudget(): Promise<void> {
     if (this.cancelled) throw new Error('cancelled');
 
-    const persistedCooldown = getSpotifyCooldown(path);
-    if (persistedCooldown) {
-      throw new SpotifyRateLimitError(persistedCooldown.path, persistedCooldown.until - Date.now());
+    const now = Date.now();
+    this.requestLog = this.requestLog.filter((t) => t > now - RATE_LIMIT_WINDOW_MS);
+
+    if (this.requestLog.length < RATE_LIMIT_BUDGET) {
+      this.requestLog.push(now);
+      return;
     }
 
+    const oldest = this.requestLog[0];
+    const waitMs = oldest + RATE_LIMIT_WINDOW_MS - now + 100;
+    console.info(
+      '[spotify] proactive throttle —',
+      this.requestLog.length,
+      'req in last 30s, waiting',
+      Math.ceil(waitMs / 1000) + 's',
+    );
+    await this.wait(Math.max(waitMs, 100));
+    return this.waitForBudget();
+  }
+
+  private async doRequest<T>(path: string, init: RequestInit, attempt: number): Promise<T> {
+    // Proactive throttle runs first — keeps us under the budget.
+    await this.waitForBudget();
+
+    if (this.cancelled) throw new Error('cancelled');
+
+    // Cross-session persisted cooldown. If it is short enough, wait it out;
+    // otherwise surface it to the caller so the UI can show a countdown.
+    const persistedCooldown = getSpotifyCooldown(path);
+    if (persistedCooldown) {
+      const remainingMs = persistedCooldown.until - Date.now();
+      if (remainingMs > 30_000) {
+        throw new SpotifyRateLimitError(persistedCooldown.path, remainingMs);
+      }
+      if (remainingMs > 0) {
+        console.info('[spotify] persisted cooldown', path, '— waiting', Math.ceil(remainingMs / 1000) + 's');
+        await this.wait(remainingMs);
+      }
+    }
+
+    // In-session rate-limit pause set by a 429 response — wait, then proceed.
     const pause = this.rateLimitedUntil - Date.now();
-    if (pause > 0) throw new SpotifyRateLimitError(path, pause);
+    if (pause > 0) {
+      console.info('[spotify] in-session pause', Math.ceil(pause / 1000) + 's before', path);
+      await this.wait(pause);
+    }
+
     if (this.cancelled) throw new Error('cancelled');
 
     let response: Response;
@@ -85,20 +131,27 @@ export class SpotifyApiClient {
 
     if (response.status === 429) {
       const header = response.headers.get('Retry-After');
-      const retryAfterSec = header !== null && Number.isFinite(Number(header))
-        ? Math.max(1, Number(header))
-        : null;
-      const backoff = retryAfterSec !== null
-        ? retryAfterSec * 1000
-        : 120000;
-      console.warn('[spotify] 429', path, '— Retry-After:', header ?? '(absent)', '— cooling down', Math.round(backoff / 1000) + 's');
+      const retryAfterSec =
+        header !== null && Number.isFinite(Number(header)) ? Math.max(1, Number(header)) : null;
+      // 30s flat fallback — matches Spotify's rolling window length.
+      const backoff = retryAfterSec !== null ? retryAfterSec * 1000 : 30_000;
+      console.warn(
+        '[spotify] 429',
+        path,
+        '— Retry-After:',
+        header ?? '(absent)',
+        '— attempt:',
+        attempt,
+        '— backoff:',
+        Math.round(backoff / 1000) + 's',
+      );
       this.rateLimitedUntil = Math.max(this.rateLimitedUntil, Date.now() + backoff);
-      const persisted = setSpotifyCooldown(path, backoff);
-      if (retryAfterSec !== null && retryAfterSec <= 2 && attempt < 1 && !this.cancelled) {
-        await this.wait(backoff);
+      setSpotifyCooldown(path, backoff);
+      if (attempt < 3 && !this.cancelled) {
+        // Next call's in-session pause check will handle the wait.
         return this.doRequest(path, init, attempt + 1);
       }
-      throw new SpotifyRateLimitError(persisted.path, persisted.until - Date.now());
+      throw new SpotifyRateLimitError(path, backoff);
     }
 
     if (response.status >= 500 && attempt < 3 && !this.cancelled) {

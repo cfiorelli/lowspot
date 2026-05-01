@@ -17,7 +17,18 @@ export const REQUIRED_SCOPES = [
   'streaming',
 ] as const;
 
-export const POLL_INTERVAL_MS = 3000;
+// Playback polling: 8s keeps us well within Spotify's rate limits.
+// Do NOT lower without adjusting RATE_LIMIT_BUDGET.
+export const POLL_INTERVAL_MS = 8_000;
+
+// Delay between library-sync page fetches. 500ms ≈ 60 req/30s for sync,
+// leaving budget for polling + user actions.
+export const LIBRARY_PAGE_DELAY_MS = 500;
+
+// Proactive client-side rate limit. Spotify's window is ~30s.
+// Cap at 100 req/30s (empirical limit ~180) to prevent 429s entirely.
+export const RATE_LIMIT_BUDGET = 100;
+export const RATE_LIMIT_WINDOW_MS = 30_000;
 
 export const LOGIN_SIZE = { width: 640, height: 560 };
 export const LEAN_SIZE = { width: 900, height: 280 };
