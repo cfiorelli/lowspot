@@ -307,6 +307,14 @@ function App() {
         error: firstMessage,
       });
 
+      // Spotify returns 403 "Restriction violated" on some Connect devices but still
+      // executes the command. Don't log it as an error or reset optimistic UI — just
+      // verify state via refresh.
+      if (/Restriction violated/i.test(firstMessage)) {
+        void refreshPlayback();
+        return true;
+      }
+
       if (shouldRetryPlaybackError(firstMessage)) {
         try {
           await refreshPlayback();
