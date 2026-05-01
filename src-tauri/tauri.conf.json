@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "lowspot",
   "version": "0.1.0",
-  "identifier": "com.lowspot.app",
+  "identifier": "com.cfiorelli.lowspot",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",

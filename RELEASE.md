@@ -23,6 +23,7 @@ This document defines the macOS release path. It is intentionally conservative u
   - The Spotify app must include `http://127.0.0.1:7878/callback`.
   - Development-mode Spotify apps allow only allowlisted users.
   - Users should stop testing if a cooldown appears.
+- For private alpha builds, the Spotify Client ID is baked into the artifact at build time. Add each tester to the Spotify app before distributing the DMG.
 
 4. Signed/notarized releases
 - Future production path.
@@ -34,7 +35,7 @@ This document defines the macOS release path. It is intentionally conservative u
 - `npm run typecheck`
 - `npm run lint`
 - `npm run build`
-- `VITE_LOWSPOT_MOCK=1 npm run build`
+- `npm run build:mock`
 - Manual mock-mode smoke test:
   - Lean mode renders fixture playback.
   - Expanded mode renders mock Liked Songs, Playlists, Search, Queue, and Settings.
@@ -49,9 +50,22 @@ This document defines the macOS release path. It is intentionally conservative u
 
 - There is no auto-updater yet.
 - There is no signed/notarized installer yet.
-- Each developer/user needs a valid Spotify Client ID unless a shared app/client strategy is chosen.
+- Developers running from source need a valid Spotify Client ID in `.env`.
+- Users installing a DMG use the Client ID baked into that build.
 - A shared Spotify app in development mode is limited to allowlisted users.
 - A shared app in extended quota mode requires Spotify approval.
+- Unsigned/private-alpha distribution should stay small and explicit about Gatekeeper warnings.
+
+## Private Alpha User Instructions
+
+Send testers:
+
+1. The latest DMG from `src-tauri/target/release/bundle/dmg/`.
+2. A note that Spotify Premium is expected.
+3. A note that their Spotify account must be allowlisted before login.
+4. A warning that if lowspot displays a Spotify cooldown, they should stop and report the status-log text.
+
+Do not ask testers to create `.env` files unless they are running from source.
 
 ## Artifact Naming
 

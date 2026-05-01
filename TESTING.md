@@ -12,7 +12,7 @@
 
 - Prefer mock mode for UI and interaction testing:
   ```bash
-  VITE_LOWSPOT_MOCK=1 npm run tauri:dev
+  npm run tauri:dev:mock
   ```
 - Use live Spotify only for API-specific verification.
 - Do not continue clicking Spotify-backed views after a 429.
@@ -22,7 +22,7 @@
 
 ## Mock Mode Matrix
 
-1. Launch with `VITE_LOWSPOT_MOCK=1 npm run tauri:dev`.
+1. Launch with `npm run tauri:dev:mock`.
 2. Confirm the app opens signed in as a mock user without Spotify login.
 3. Confirm lean mode displays a mock track.
 4. Expand and visit:

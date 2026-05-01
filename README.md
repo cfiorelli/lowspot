@@ -15,7 +15,7 @@ lowspot is under active development. The app recently triggered a long Spotify W
 Use mock mode for UI work:
 
 ```bash
-VITE_LOWSPOT_MOCK=1 npm run tauri:dev
+npm run tauri:dev:mock
 ```
 
 Mock mode bypasses Spotify auth and uses local fixture data for playback, search, liked songs, albums, playlists, queue, and recently played.
@@ -85,16 +85,48 @@ Liked Songs uses Spotify's `GET /me/tracks` endpoint and requires `user-library-
 
 ## Install
 
+For development:
+
 ```bash
 npm install
 ```
+
+## Quick Install For Allowlisted Users
+
+This path is for a small private alpha using your Spotify Developer app.
+
+Before sending a build:
+
+1. Add the user in Spotify Dashboard under your app's user management.
+2. Confirm the app has this Redirect URI:
+   ```text
+   http://127.0.0.1:7878/callback
+   ```
+3. Build the macOS bundle:
+   ```bash
+   npm run tauri:build
+   ```
+4. Share the generated DMG from:
+   ```text
+   src-tauri/target/release/bundle/dmg/
+   ```
+
+For the user:
+
+1. Install from the DMG.
+2. If macOS blocks the unsigned app, right-click `lowspot.app` and choose Open.
+3. Log in with the allowlisted Spotify account.
+4. Approve the requested Spotify permissions.
+5. Stop using live Spotify views if the status log shows a cooldown.
+
+Users installing a DMG do not need `.env`; the Spotify Client ID is baked into the build. Developers running from source do need `.env`.
 
 ## Development
 
 Preferred safe UI development:
 
 ```bash
-VITE_LOWSPOT_MOCK=1 npm run tauri:dev
+npm run tauri:dev:mock
 ```
 
 Live Spotify desktop development:
@@ -115,6 +147,12 @@ Web build:
 
 ```bash
 npm run build
+```
+
+Mock build:
+
+```bash
+npm run build:mock
 ```
 
 Desktop build:
@@ -141,13 +179,13 @@ Rules for live testing:
 - Tauri desktop uses the Tauri Store plugin at:
 
 ```text
-~/Library/Application Support/com.lowspot.app/lowspot_tokens.json
+~/Library/Application Support/com.cfiorelli.lowspot/lowspot_tokens.json
 ```
 
 To force a fresh desktop login:
 
 ```bash
-rm -f "$HOME/Library/Application Support/com.lowspot.app/lowspot_tokens.json"
+rm -f "$HOME/Library/Application Support/com.cfiorelli.lowspot/lowspot_tokens.json"
 ```
 
 Do not run live Spotify tests while a known cooldown is active.

@@ -1,16 +1,19 @@
 {
   "name": "lowspot",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "VITE_LOWSPOT_MOCK=1 vite",
     "build": "tsc -b && vite build",
+    "build:mock": "VITE_LOWSPOT_MOCK=1 tsc -b && VITE_LOWSPOT_MOCK=1 vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "tauri:dev:mock": "VITE_LOWSPOT_MOCK=1 tauri dev",
     "tauri:build": "tauri build"
   },
   "dependencies": {
