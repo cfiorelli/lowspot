@@ -62,7 +62,11 @@ export function LeanBar({
             </p>
           </>
         ) : (
-          <p className="artist">No active playback. Start Spotify on any device to control it here.</p>
+          <p className="artist">
+            {controlsDisabled
+              ? 'Connecting playback controls...'
+              : 'Ready. Search or expand to choose music.'}
+          </p>
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { StatusLogEntry } from '../state/store';
 
 interface StatusStripProps {
@@ -18,11 +18,10 @@ const formatTime = (timestamp: number): string =>
 export function StatusStrip({ errorMessage, infoMessage, statusLog, onClearLog }: StatusStripProps) {
   const logRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = logRef.current;
     if (!el) return;
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    if (isAtBottom) el.scrollTop = el.scrollHeight;
+    el.scrollTop = el.scrollHeight;
   }, [statusLog]);
 
   return (

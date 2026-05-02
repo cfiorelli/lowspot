@@ -291,7 +291,7 @@ export class SpotifyApiClient {
       audiobooks: result.audiobooks ?? { items: [] },
     });
 
-    return runSearch('track,album,artist,playlist', 20)
+    return runSearch('track,album,artist,playlist', 10)
       .then((base) => normalize(base))
       .then(async (base) => {
         let merged = base;
@@ -316,7 +316,7 @@ export class SpotifyApiClient {
         if (coreCount > 0) return merged;
 
         try {
-          const tracksOnly = await runSearch('track', 50);
+          const tracksOnly = await runSearch('track', 20);
           return { ...merged, tracks: tracksOnly.tracks ?? { items: [] } };
         } catch {
           return merged;

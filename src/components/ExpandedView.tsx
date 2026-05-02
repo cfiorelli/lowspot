@@ -16,6 +16,7 @@ interface ExpandedViewProps {
   recentlyPlayed: RecentlyPlayedItem[];
   playback: PlaybackState | null;
   controlsDisabled: boolean;
+  playbackSettingsDisabled: boolean;
   shuffleState: boolean;
   repeatState: 'off' | 'track' | 'context';
   shufflePending: boolean;
@@ -53,6 +54,7 @@ export function ExpandedView({
   recentlyPlayed,
   playback,
   controlsDisabled,
+  playbackSettingsDisabled,
   shuffleState,
   repeatState,
   shufflePending,
@@ -134,7 +136,7 @@ export function ExpandedView({
               className={`shuffle-toggle ${shuffleState ? 'toggle-active' : ''}`}
               aria-pressed={shuffleState}
               aria-label="Toggle shuffle"
-              disabled={controlsDisabled || shufflePending}
+              disabled={playbackSettingsDisabled || shufflePending}
               onClick={onToggleShuffle}
             >
               {shufflePending ? 'Shuffle…' : `Shuffle ${shuffleState ? 'On' : 'Off'}`}
@@ -144,7 +146,7 @@ export function ExpandedView({
               className={`repeat-toggle ${repeatState !== 'off' ? 'toggle-active' : ''}`}
               aria-pressed={repeatState !== 'off'}
               aria-label="Cycle repeat"
-              disabled={controlsDisabled || repeatPending}
+              disabled={playbackSettingsDisabled || repeatPending}
               onClick={onCycleRepeat}
             >
               {repeatPending ? 'Repeat…' : `Repeat ${repeatState}`}
@@ -156,7 +158,7 @@ export function ExpandedView({
                 min={0}
                 max={100}
                 defaultValue={playback?.device?.volume_percent ?? 50}
-                disabled={controlsDisabled}
+                disabled={playbackSettingsDisabled}
                 onMouseUp={(event) => {
                   const target = event.target as HTMLInputElement;
                   onSetVolume(Number(target.value));

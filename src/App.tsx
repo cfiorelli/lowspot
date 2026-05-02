@@ -1105,6 +1105,7 @@ function App() {
   }
 
   const playbackControlsDisabled = !(playback?.device?.id || sdkDeviceId);
+  const playbackSettingsDisabled = !playback?.device?.id;
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
 
   return (
@@ -1175,6 +1176,7 @@ function App() {
           recentlyPlayed={recentlyPlayed}
           playback={playback}
           controlsDisabled={playbackControlsDisabled}
+          playbackSettingsDisabled={playbackSettingsDisabled}
           shuffleState={effectiveShuffle}
           repeatState={effectiveRepeat}
           shufflePending={pendingShuffle !== null}
@@ -1267,6 +1269,11 @@ function App() {
               return;
             }
 
+            if (!playback?.device?.id) {
+              setInfoMessage('Start playback before changing shuffle.');
+              return;
+            }
+
             const nextShuffle = !playback?.shuffle_state;
             setPendingShuffle(nextShuffle);
 
@@ -1296,6 +1303,11 @@ function App() {
           }}
           onCycleRepeat={() => {
             if (pendingRepeat !== null) {
+              return;
+            }
+
+            if (!playback?.device?.id) {
+              setInfoMessage('Start playback before changing repeat.');
               return;
             }
 
