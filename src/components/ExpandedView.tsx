@@ -123,7 +123,7 @@ export function ExpandedView({
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">
               {'<<'}
             </button>
-            <button type="button" className="play-toggle" onClick={onPlayPause} disabled={controlsDisabled} aria-label="Play or pause">
+            <button type="button" className="play-toggle" onClick={onPlayPause} disabled={controlsDisabled && rows.length === 0} aria-label="Play or pause">
               {playback?.is_playing ? 'Pause' : 'Play'}
             </button>
             <button type="button" className="transport-button" onClick={onNext} disabled={controlsDisabled} aria-label="Next">

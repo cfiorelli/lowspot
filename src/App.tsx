@@ -566,6 +566,15 @@ function App() {
       return;
     }
 
+    // No active device but we have rows — start playing from the current section.
+    if (!playback?.device?.id && !sdkDeviceId && tableRows.length > 0 && activeNav !== 'Now Playing') {
+      const startIdx = effectiveShuffle
+        ? Math.floor(Math.random() * tableRows.length)
+        : Math.min(selectedRow, tableRows.length - 1);
+      void playSelectedRow(startIdx);
+      return;
+    }
+
     const prevPlayback = playback;
     setPlayback(
       playback
@@ -704,6 +713,7 @@ function App() {
 
           const inProgress = newEntries.length + cached.length;
           setLikedSongs([...newEntries.map((e) => e.track), ...cached.map((e) => e.track)]);
+          saveCachedLikedSongs([...newEntries, ...cached]);
           if (total > 0) setInfoMessage(`Loading liked songs… ${inProgress} of ${total}`);
           await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
@@ -760,6 +770,7 @@ function App() {
 
           if (hitCache || !page.next) break;
           offset += page.limit;
+          saveCachedLikedAlbums([...newEntries, ...cached]);
           if (total > 0) setInfoMessage(`Loading liked albums… ${newEntries.length + cached.length} of ${total}`);
           await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
@@ -1205,7 +1216,15 @@ function App() {
               });
 
               if (!ok) {
-                setPendingShuffle(null);
+                // Device may have applied the command despite returning an error.
+                // Verify actual state before giving up.
+                await new Promise((r) => setTimeout(r, 500));
+                await refreshPlayback();
+                if (useAppStore.getState().playback?.shuffle_state === nextShuffle) {
+                  setErrorMessage(''); // Command succeeded — clear the spurious error.
+                } else {
+                  setPendingShuffle(null);
+                }
               }
             })();
           }}
@@ -1235,7 +1254,13 @@ function App() {
               });
 
               if (!ok) {
-                setPendingRepeat(null);
+                await new Promise((r) => setTimeout(r, 500));
+                await refreshPlayback();
+                if (useAppStore.getState().playback?.repeat_state === next) {
+                  setErrorMessage('');
+                } else {
+                  setPendingRepeat(null);
+                }
               }
             })();
           }}
