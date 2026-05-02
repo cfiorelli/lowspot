@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "lowspot",
-        "width": 460,
-        "height": 84,
-        "minWidth": 360,
-        "minHeight": 64,
+        "width": 900,
+        "height": 300,
+        "minWidth": 520,
+        "minHeight": 80,
         "resizable": true,
         "fullscreen": false
       }

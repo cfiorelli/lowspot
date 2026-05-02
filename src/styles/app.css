@@ -87,6 +87,12 @@ button:focus-visible {
   min-height: 100%;
 }
 
+/* In lean mode content drives height — ResizeObserver syncs window to shell. */
+.app-shell[data-mode='lean'] {
+  height: auto;
+  min-height: 0;
+}
+
 .top-strip {
   display: flex;
   justify-content: space-between;

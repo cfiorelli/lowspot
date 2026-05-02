@@ -219,9 +219,15 @@ function App() {
   const resizeForMode = async (nextMode: 'login' | 'lean' | 'expanded') => {
     try {
       const appWindow = getCurrentWindow();
-      await appWindow.setMinSize(new LogicalSize(MIN_SIZE.width, MIN_SIZE.height));
-      const size = nextMode === 'login' ? LOGIN_SIZE : nextMode === 'lean' ? LEAN_SIZE : EXPANDED_SIZE;
-      await appWindow.setSize(new LogicalSize(size.width, size.height));
+      if (nextMode === 'lean') {
+        // Small min so ResizeObserver can snap height to actual content.
+        await appWindow.setMinSize(new LogicalSize(520, 80));
+        await appWindow.setSize(new LogicalSize(LEAN_SIZE.width, LEAN_SIZE.height));
+      } else {
+        const size = nextMode === 'login' ? LOGIN_SIZE : EXPANDED_SIZE;
+        await appWindow.setMinSize(new LogicalSize(MIN_SIZE.width, MIN_SIZE.height));
+        await appWindow.setSize(new LogicalSize(size.width, size.height));
+      }
     } catch {
       // Browser mode fallback: skip window API without blocking app.
     }
@@ -947,6 +953,42 @@ function App() {
     void resizeForMode(nextMode);
   }, [authReady, tokens, mode]);
 
+  // In lean mode, keep the window height locked to actual content height so
+  // the window never clips or wastes space regardless of status log activity
+  // or responsive breakpoint changes from the user resizing the width.
+  useEffect(() => {
+    if (mode !== 'lean' || !isTauri()) return;
+
+    const shell = document.querySelector<HTMLElement>('.app-shell');
+    if (!shell) return;
+
+    let scheduled = false;
+
+    const syncHeight = async () => {
+      scheduled = false;
+      const contentH = Math.ceil(shell.getBoundingClientRect().height);
+      if (contentH < 50) return;
+      // Title-bar chrome height so setSize (outer) matches inner content height.
+      const chromeH = window.outerHeight - window.innerHeight;
+      try {
+        const appWindow = getCurrentWindow();
+        await appWindow.setSize(new LogicalSize(window.outerWidth, contentH + chromeH));
+      } catch { /* browser mode */ }
+    };
+
+    const handleResize = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => void syncHeight());
+    };
+
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(shell);
+    handleResize();
+
+    return () => observer.disconnect();
+  }, [mode]);
+
   useEffect(() => {
     if (pendingShuffle === null) {
       return;
@@ -1044,7 +1086,7 @@ function App() {
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-mode={mode}>
       <header className="top-strip">
         <p>
           Signed in as {profile?.display_name ?? 'Spotify user'}
