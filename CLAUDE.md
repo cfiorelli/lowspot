@@ -52,18 +52,28 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+npm run typecheck
+npm run build
+npm run lint
+npm run tauri:build
 ```
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+lowspot is a Tauri 2 desktop app with a React/TypeScript/Vite frontend.
+
+- Tokens live in Tauri Store (`lowspot_tokens.json`) so login survives packaged app installs.
+- Spotify library cache lives in Tauri Store (`lowspot_library_cache.json`) with IndexedDB/localStorage only as migration/fallback. Do not move durable library cache back to WebView-only storage.
+- WebView storage origins differ between `tauri dev`, browser preview, and packaged installs. A cache visible in dev may not exist in the installed app.
+- The app starts in collapsed mode, called `lean` in code. Expanded mode is entered by user action and resizes the Tauri window to the expanded default.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Spotify Web API requests are scarce. The app must prefer cached data, lazy loading, and user-triggered fetches over background hydration.
+- Do not automatically retry `429` responses. Record the cooldown, surface it to the UI, and stop. Repeated `429`s on the same endpoint should increase local backoff.
+- Do not silently wait through a persisted Spotify cooldown and then call the endpoint. Return a local cooldown error so the UI can explain what is happening.
+- Do not fetch queue, playlists, liked songs, liked albums, or recently played data unless the user opens the relevant view or cached data is stale by design.
+- Library pages should be persisted as they load. Anything already downloaded with Spotify quota should not need to be downloaded again.
+- Keep first-launch/collapsed view cheap: playback state is acceptable, but no proactive full library hydration.
+- If rate-limit behavior changes, preserve diagnostics that distinguish local protective cooldowns from actual Spotify `429` responses.

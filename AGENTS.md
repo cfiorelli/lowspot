@@ -38,6 +38,16 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## lowspot Architecture Guardrails
+
+- Treat Spotify Web API calls as scarce. Prefer cached data, lazy loading, and user-triggered fetches.
+- Durable app data belongs in Tauri Store. Tokens use `lowspot_tokens.json`; library cache uses `lowspot_library_cache.json`. IndexedDB/localStorage are only migration/fallback for library cache because WebView storage differs between dev, browser preview, and packaged installs.
+- Do not automatically retry Spotify `429` responses. Record the cooldown, surface it, and stop.
+- Do not silently wait through a persisted cooldown and then call Spotify. Return a local cooldown message so the UI can explain the pause.
+- Repeated real `429`s on one endpoint should increase local backoff rather than creating a 30-second retry loop.
+- Keep launch cheap. The app starts in collapsed/`lean` mode; do not hydrate full library, queue, playlists, or recently played on startup.
+- Anything downloaded with Spotify quota should be persisted as it arrives and reused after relaunch.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 

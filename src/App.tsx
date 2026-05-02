@@ -231,7 +231,12 @@ function App() {
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unexpected Spotify API error.';
       if (error instanceof SpotifyRateLimitError) {
-        setErrorMessage(`Spotify is rate limiting lowspot on ${error.path}. Try again in ${formatCooldownRemaining(Date.now() + error.retryAfterMs)}.`);
+        const remaining = formatCooldownRemaining(Date.now() + error.retryAfterMs);
+        const strikeText = error.strikes && error.strikes > 1 ? ` Repeated 429 #${error.strikes}; backing off locally.` : '';
+        const sourceText = error.source === 'local'
+          ? 'lowspot is pausing this Spotify endpoint to protect quota'
+          : 'Spotify returned 429 for this endpoint';
+        setErrorMessage(`${sourceText} (${error.path}). Try again in ${remaining}.${strikeText}`);
       } else if (msg.startsWith('403')) {
         setErrorMessage('Spotify returned 403 — playback controls require Spotify Premium, or the token lacks a required scope.');
       } else {
