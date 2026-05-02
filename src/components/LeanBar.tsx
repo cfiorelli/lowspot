@@ -62,11 +62,7 @@ export function LeanBar({
             </p>
           </>
         ) : (
-          <p className="artist">
-            {controlsDisabled
-              ? 'Connecting playback controls...'
-              : 'Ready. Search or expand to choose music.'}
-          </p>
+          <p className="artist">Ready. Search or expand to choose music.</p>
         )}
       </div>
 

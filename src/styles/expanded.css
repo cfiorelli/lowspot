@@ -76,6 +76,10 @@
   gap: 8px;
 }
 
+.sync-page-button {
+  min-width: 74px;
+}
+
 .collapse-inline {
   display: none;
 }

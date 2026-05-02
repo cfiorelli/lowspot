@@ -27,8 +27,10 @@ interface ExpandedViewProps {
   sectionLoading: boolean;
   sectionMessage: string;
   cooldownSummary: string;
+  librarySyncAvailable: boolean;
   onNavSelect: (nav: NavItem) => void;
   onCollapse: () => void;
+  onSyncLibraryPage: () => void;
   onSearch: (query: string) => void;
   onRowSelect: (index: number) => void;
   onPlayTrack: (trackUri: string) => void;
@@ -65,8 +67,10 @@ export function ExpandedView({
   sectionLoading,
   sectionMessage,
   cooldownSummary,
+  librarySyncAvailable,
   onNavSelect,
   onCollapse,
+  onSyncLibraryPage,
   onSearch,
   onRowSelect,
   onPlayTrack,
@@ -120,6 +124,11 @@ export function ExpandedView({
               Collapse
             </button>
             <h3>{activeNav}</h3>
+            {librarySyncAvailable ? (
+              <button type="button" className="sync-page-button" onClick={onSyncLibraryPage} disabled={sectionLoading}>
+                {sectionLoading ? 'Syncing...' : 'Sync 50'}
+              </button>
+            ) : null}
           </div>
           <div className="playback-controls">
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">

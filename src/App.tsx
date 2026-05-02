@@ -23,6 +23,7 @@ import {
 } from './spotify/mockData';
 import { useAppStore } from './state/store';
 import { EXPANDED_SIZE, LEAN_SIZE, LIBRARY_PAGE_DELAY_MS, LOGIN_SIZE, MIN_SIZE, POLL_INTERVAL_MS } from './utils/constants';
+import type { NavItem } from './utils/constants';
 import {
   loadCachedLikedSongs, saveCachedLikedSongs,
   loadCachedLikedAlbums, saveCachedLikedAlbums,
@@ -30,7 +31,7 @@ import {
   loadCacheMeta, saveCacheMeta,
 } from './utils/libraryCache';
 import type { CacheWriteResult } from './utils/libraryCache';
-import { formatCooldownRemaining, getActiveSpotifyCooldowns } from './utils/spotifyCooldown';
+import { formatCooldownRemaining, getActiveSpotifyCooldowns, getSpotifyCooldown } from './utils/spotifyCooldown';
 import { registerShortcuts } from './utils/shortcuts';
 import './styles/app.css';
 import './styles/lean.css';
@@ -65,6 +66,9 @@ const randomIndex = (length: number): number => {
 
 const isFresh = (timestamp: number | undefined, maxAgeMs: number): boolean =>
   typeof timestamp === 'number' && Date.now() - timestamp < maxAgeMs;
+
+const isLibraryNav = (nav: NavItem): nav is 'Liked Songs' | 'Liked Albums' =>
+  nav === 'Liked Songs' || nav === 'Liked Albums';
 
 function App() {
   const {
@@ -279,6 +283,16 @@ function App() {
 
   const shouldRetryPlaybackError = (message: string): boolean =>
     /string did not match the expected pattern|\b502\b|bad gateway|no active device/i.test(message);
+
+  const guardPlaybackEndpointCooldown = (): boolean => {
+    const cooldown = getSpotifyCooldown('/me/player');
+    if (!cooldown) return false;
+
+    setErrorMessage(
+      `lowspot is pausing Spotify playback controls to protect quota. Try again in ${formatCooldownRemaining(cooldown.until)}.`,
+    );
+    return true;
+  };
 
   const runPlaybackCommand = async (
     operation: string,
@@ -587,17 +601,26 @@ function App() {
     setInfoMessage('Connecting local Spotify playback device...');
 
     try {
-      const connection = await connectPlaybackSdk(activeTokens.accessToken, (status) => {
-        setSdkMessage(status.message);
-        if (status.ready) {
-          sdkDeviceIdRef.current = status.deviceId ?? null;
-          setSdkDeviceId(status.deviceId ?? null);
-          setInfoMessage(`Spotify Connect device ready: lowspot (${status.deviceId})`);
-        } else {
-          sdkDeviceIdRef.current = null;
-          setSdkDeviceId(null);
-        }
-      });
+      const connection = await Promise.race([
+        connectPlaybackSdk(activeTokens.accessToken, (status) => {
+          setSdkMessage(status.message);
+          if (status.ready) {
+            sdkDeviceIdRef.current = status.deviceId ?? null;
+            setSdkDeviceId(status.deviceId ?? null);
+            setInfoMessage(`Spotify Connect device ready: lowspot (${status.deviceId})`);
+          } else {
+            sdkDeviceIdRef.current = null;
+            setSdkDeviceId(null);
+          }
+        }),
+        new Promise<null>((resolve) => {
+          window.setTimeout(() => {
+            setSdkMessage('Local playback device did not connect. Spotify controls can still target an active device.');
+            setInfoMessage('Local playback device did not connect. Spotify controls can still target an active device.');
+            resolve(null);
+          }, 8_000);
+        }),
+      ]);
 
       sdkDisconnectRef.current?.();
       sdkDisconnectRef.current = connection?.disconnect ?? null;
@@ -1029,6 +1052,95 @@ function App() {
     finishSection('');
   };
 
+  const syncOneLibraryPage = async (nav: 'Liked Songs' | 'Liked Albums') => {
+    const activeTokens = useAppStore.getState().tokens;
+    const tokenScopes = new Set(activeTokens?.scope.split(/\s+/).filter(Boolean) ?? []);
+    if (!tokenScopes.has('user-library-read')) {
+      setErrorMessage('Spotify token is missing user-library-read. Log out, log in again, and approve library access.');
+      return;
+    }
+
+    const cooldown = getSpotifyCooldown(nav === 'Liked Songs' ? '/me/tracks' : '/me/albums');
+    if (cooldown) {
+      setErrorMessage(
+        `lowspot is pausing ${nav} sync to protect Spotify quota. Try again in ${formatCooldownRemaining(cooldown.until)}.`,
+      );
+      return;
+    }
+
+    setLoadingSection(nav);
+    setSectionMessage(`Syncing 50 ${nav.toLowerCase()}...`);
+
+    try {
+      if (nav === 'Liked Songs') {
+        const cached = await loadCachedLikedSongs();
+        if (cached.length > 0) setLikedSongs(cached.map((entry) => entry.track));
+
+        const loaded = await withApi(async (api) => {
+          const page = await api.getLikedSongs(LIBRARY_PAGE_SIZE, cached.length);
+          const newEntries = page.items.flatMap((item) => item.track ? [{ added_at: item.added_at, track: item.track }] : []);
+          const seen = new Set<string>();
+          const merged = [...cached, ...newEntries].filter((entry) => {
+            if (seen.has(entry.track.id)) return false;
+            seen.add(entry.track.id);
+            return true;
+          });
+          const complete = !page.next || merged.length >= page.total;
+          setLikedSongs(merged.map((entry) => entry.track));
+          ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(merged));
+          ensureCacheWrite('Liked Songs metadata', await saveCacheMeta('likedSongs', {
+            syncedAt: Date.now(),
+            total: page.total,
+            complete,
+          }));
+          return { added: merged.length - cached.length, loaded: merged.length, total: page.total, complete };
+        });
+
+        const message = loaded === null
+          ? `Kept ${cached.length} cached liked songs. Spotify sync paused; check the status message for cooldown details.`
+          : loaded.complete
+            ? `Synced liked songs. Cache now has all ${loaded.loaded}.`
+            : `Synced ${loaded.added} more liked songs. Cache now has ${loaded.loaded} of ${loaded.total}.`;
+        setInfoMessage(message);
+        setSectionMessage(message);
+        return;
+      }
+
+      const cached = await loadCachedLikedAlbums();
+      if (cached.length > 0) setLikedAlbums(cached.map((entry) => entry.album));
+
+      const loaded = await withApi(async (api) => {
+        const page = await api.getLikedAlbums(LIBRARY_PAGE_SIZE, cached.length);
+        const newEntries = page.items.flatMap((item) => item.album ? [{ added_at: item.added_at, album: item.album }] : []);
+        const seen = new Set<string>();
+        const merged = [...cached, ...newEntries].filter((entry) => {
+          if (seen.has(entry.album.id)) return false;
+          seen.add(entry.album.id);
+          return true;
+        });
+        const complete = !page.next || merged.length >= page.total;
+        setLikedAlbums(merged.map((entry) => entry.album));
+        ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(merged));
+        ensureCacheWrite('Liked Albums metadata', await saveCacheMeta('likedAlbums', {
+          syncedAt: Date.now(),
+          total: page.total,
+          complete,
+        }));
+        return { added: merged.length - cached.length, loaded: merged.length, total: page.total, complete };
+      });
+
+      const message = loaded === null
+        ? `Kept ${cached.length} cached liked albums. Spotify sync paused; check the status message for cooldown details.`
+        : loaded.complete
+          ? `Synced liked albums. Cache now has all ${loaded.loaded}.`
+          : `Synced ${loaded.added} more liked albums. Cache now has ${loaded.loaded} of ${loaded.total}.`;
+      setInfoMessage(message);
+      setSectionMessage(message);
+    } finally {
+      setLoadingSection((current) => (current === nav ? null : current));
+    }
+  };
+
   const playSelectedRow = async (index: number) => {
     const row = tableRows[index];
     const uri = row?.uri;
@@ -1238,7 +1350,8 @@ function App() {
 
   const canPlayVisibleSelection = mode === 'expanded' && activeNav !== 'Now Playing' && tableRows.length > 0;
   const playbackControlsDisabled = !(playback?.item || canPlayVisibleSelection);
-  const playbackSettingsDisabled = !playback?.device?.id;
+  const playbackEndpointCooldown = getSpotifyCooldown('/me/player');
+  const playbackSettingsDisabled = !playback?.device?.id || Boolean(playbackEndpointCooldown);
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
 
   return (
@@ -1320,6 +1433,7 @@ function App() {
           sectionLoading={loadingSection === activeNav}
           sectionMessage={sectionMessage}
           cooldownSummary={cooldownSummary}
+          librarySyncAvailable={isLibraryNav(activeNav)}
           onNavSelect={(nav) => {
             setActiveNav(nav);
             if (nav === 'Settings') {
@@ -1329,6 +1443,11 @@ function App() {
           onCollapse={() => {
             setMode('lean');
             void resizeForMode('lean');
+          }}
+          onSyncLibraryPage={() => {
+            if (isLibraryNav(activeNav)) {
+              void syncOneLibraryPage(activeNav);
+            }
           }}
           onSearch={(query) => {
             void handleSearch(query);
@@ -1402,6 +1521,10 @@ function App() {
               return;
             }
 
+            if (guardPlaybackEndpointCooldown()) {
+              return;
+            }
+
             if (!playback?.device?.id) {
               setInfoMessage('Start playback before changing shuffle.');
               return;
@@ -1436,6 +1559,10 @@ function App() {
           }}
           onCycleRepeat={() => {
             if (pendingRepeat !== null) {
+              return;
+            }
+
+            if (guardPlaybackEndpointCooldown()) {
               return;
             }
 
@@ -1476,6 +1603,10 @@ function App() {
             })();
           }}
           onSetVolume={(volumePercent) => {
+            if (guardPlaybackEndpointCooldown()) {
+              return;
+            }
+
             const prevPlayback = playback;
             setPlayback(
               playback
