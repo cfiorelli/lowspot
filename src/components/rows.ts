@@ -168,9 +168,19 @@ export const buildRowsForNav = (
   }
 
   if (activeNav === 'Queue') {
-    return (queue?.queue ?? []).map((track) => ({
-      id: `queue-${track.id}`,
-      title: track.name,
+    const grouped = (queue?.queue ?? []).reduce<Array<{ track: SpotifyTrack; count: number }>>((acc, track) => {
+      const previous = acc[acc.length - 1];
+      if (previous?.track.uri === track.uri) {
+        previous.count += 1;
+      } else {
+        acc.push({ track, count: 1 });
+      }
+      return acc;
+    }, []);
+
+    return grouped.map(({ track, count }, index) => ({
+      id: `queue-${track.id}-${index}`,
+      title: count > 1 ? `${track.name} x${count}` : track.name,
       subtitle: formatArtists(track.artists),
       type: 'Queued Track',
       uri: track.uri,

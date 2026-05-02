@@ -10,7 +10,7 @@ import { LeanBar } from './components/LeanBar';
 import { LoginScreen } from './components/LoginScreen';
 import { buildRowsForNav } from './components/rows';
 import { StatusStrip } from './components/StatusStrip';
-import { SpotifyApiClient, SpotifyRateLimitError } from './spotify/api';
+import { getSpotifyRequestBudget, SpotifyApiClient, SpotifyRateLimitError } from './spotify/api';
 import { connectPlaybackSdk } from './spotify/webPlaybackSDK';
 import {
   mockLikedAlbums,
@@ -27,6 +27,7 @@ import {
   loadCachedLikedSongs, saveCachedLikedSongs,
   loadCachedLikedAlbums, saveCachedLikedAlbums,
   loadCachedPlaylists, saveCachedPlaylists,
+  loadCacheMeta, saveCacheMeta,
 } from './utils/libraryCache';
 import type { CacheWriteResult } from './utils/libraryCache';
 import { formatCooldownRemaining, getActiveSpotifyCooldowns } from './utils/spotifyCooldown';
@@ -36,12 +37,15 @@ import './styles/lean.css';
 import './styles/expanded.css';
 
 const LIBRARY_PAGE_SIZE = 50;
-// No cap on first-run pages: we paginate until the end with 500ms delays
-// (60 req/30s), well within the 100 req/30s proactive budget in api.ts.
+// No cap on first-run pages: we paginate slowly and persist progress as we go,
+// so successful pages are not redownloaded.
 const MAX_INITIAL_LIBRARY_PAGES = Infinity;
 // Incrementally fetch up to 1000 new songs since last sync.
 const MAX_INCREMENTAL_LIBRARY_PAGES = 20;
 const MOCK_MODE = import.meta.env.VITE_LOWSPOT_MOCK === '1';
+const LIBRARY_CACHE_REVALIDATE_MS = 30 * 60_000;
+const RECENTLY_PLAYED_REVALIDATE_MS = 2 * 60_000;
+const SEARCH_CACHE_REVALIDATE_MS = 10 * 60_000;
 
 const countSearchResults = (results: ReturnType<typeof mockSearch>): number =>
   (results.tracks?.items.length ?? 0) +
@@ -58,6 +62,9 @@ const randomIndex = (length: number): number => {
   crypto.getRandomValues(values);
   return values[0] % length;
 };
+
+const isFresh = (timestamp: number | undefined, maxAgeMs: number): boolean =>
+  typeof timestamp === 'number' && Date.now() - timestamp < maxAgeMs;
 
 function App() {
   const {
@@ -108,7 +115,9 @@ function App() {
   const sectionLoadPendingRef = useRef(false);
   const sdkDeviceIdRef = useRef<string | null>(null);
   const sdkDisconnectRef = useRef<(() => void) | null>(null);
-  const playbackPollTickRef = useRef(0);
+  const lastRecentlyPlayedFetchAtRef = useRef(0);
+  const searchCacheRef = useRef(new Map<string, { at: number; results: ReturnType<typeof mockSearch> }>());
+  const savedTrackCacheRef = useRef(new Map<string, boolean>());
   const windowModeRef = useRef<'login' | 'lean' | 'expanded' | null>(null);
   const [pendingShuffle, setPendingShuffle] = useState<boolean | null>(null);
   const [pendingRepeat, setPendingRepeat] = useState<'off' | 'track' | 'context' | null>(null);
@@ -367,8 +376,7 @@ function App() {
     try {
       await withApi(async (api) => {
         const trackId = useAppStore.getState().playback?.item?.id;
-        const queuePollDue = useAppStore.getState().activeNav === 'Queue' || playbackPollTickRef.current % 4 === 0;
-        playbackPollTickRef.current += 1;
+        const queuePollDue = useAppStore.getState().activeNav === 'Queue';
 
         const playbackState = await api.getPlaybackState().catch(() => null);
         const queueState = queuePollDue ? await api.getQueue().catch(() => null) : null;
@@ -378,11 +386,21 @@ function App() {
           const newTrackId = playbackState.item?.id;
 
           if (newTrackId && newTrackId !== trackId) {
-            try {
-              const liked = await api.isTrackSaved(newTrackId);
-              setCurrentTrackLiked(Boolean(liked[0]));
-            } catch {
-              setCurrentTrackLiked(false);
+            const cachedLiked = savedTrackCacheRef.current.get(newTrackId);
+            if (cachedLiked !== undefined) {
+              setCurrentTrackLiked(cachedLiked);
+            } else if (useAppStore.getState().likedSongs.some((track) => track.id === newTrackId)) {
+              savedTrackCacheRef.current.set(newTrackId, true);
+              setCurrentTrackLiked(true);
+            } else {
+              try {
+                const liked = await api.isTrackSaved(newTrackId);
+                const isLiked = Boolean(liked[0]);
+                savedTrackCacheRef.current.set(newTrackId, isLiked);
+                setCurrentTrackLiked(isLiked);
+              } catch {
+                setCurrentTrackLiked(false);
+              }
             }
           }
         }
@@ -653,8 +671,10 @@ function App() {
     await withApi(async (api) => {
       if (currentTrackLiked) {
         await api.removeTrack(trackId);
+        savedTrackCacheRef.current.set(trackId, false);
       } else {
         await api.saveTrack(trackId);
+        savedTrackCacheRef.current.set(trackId, true);
       }
 
       setCurrentTrackLiked(!currentTrackLiked);
@@ -685,9 +705,24 @@ function App() {
       return;
     }
 
+    const searchCacheKey = q.toLocaleLowerCase();
+    const cachedSearch = searchCacheRef.current.get(searchCacheKey);
+    if (cachedSearch && isFresh(cachedSearch.at, SEARCH_CACHE_REVALIDATE_MS)) {
+      setSearchResults(cachedSearch.results);
+      const cachedCount = countSearchResults(cachedSearch.results);
+      const message = cachedCount === 0
+        ? `No cached results found for "${q}".`
+        : `Loaded ${cachedCount} cached search results for "${q}".`;
+      setSectionMessage(message);
+      setLoadingSection(null);
+      setInfoMessage(message);
+      return;
+    }
+
     const resultCount = await withApi(async (api) => {
       const result = await api.search(q);
       setSearchResults(result);
+      searchCacheRef.current.set(searchCacheKey, { at: Date.now(), results: result });
       return countSearchResults(result);
     });
 
@@ -729,6 +764,13 @@ function App() {
 
       const cached = await loadCachedLikedSongs();
       if (cached.length > 0) setLikedSongs(cached.map((e) => e.track));
+      const cacheMeta = await loadCacheMeta('likedSongs');
+      if (cached.length > 0 && cacheMeta?.complete && isFresh(cacheMeta.syncedAt, LIBRARY_CACHE_REVALIDATE_MS)) {
+        const message = `Loaded ${cached.length} liked songs from cache.`;
+        setInfoMessage(message);
+        finishSection(message);
+        return;
+      }
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
@@ -746,6 +788,11 @@ function App() {
 
           if (!latestRemote || latestRemote <= newestAddedAt) {
             if (total <= cached.length) {
+              ensureCacheWrite('Liked Songs metadata', await saveCacheMeta('likedSongs', {
+                syncedAt: Date.now(),
+                total,
+                complete: true,
+              }));
               return { loaded: cached.length, total, capped: false, fromCache: true };
             }
 
@@ -784,11 +831,19 @@ function App() {
         });
         setLikedSongs(merged.map((e) => e.track));
         ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(merged));
-        return { loaded: merged.length, total, capped: !hitCache && total > merged.length, fromCache: false };
+        const capped = !hitCache && total > merged.length;
+        ensureCacheWrite('Liked Songs metadata', await saveCacheMeta('likedSongs', {
+          syncedAt: Date.now(),
+          total,
+          complete: !capped,
+        }));
+        return { loaded: merged.length, total, capped, fromCache: false };
       });
 
       const message = loaded === null
-        ? 'Liked Songs request failed. Check the status message above for Spotify details, then retry after the cooldown.'
+        ? cached.length > 0
+          ? `Showing ${cached.length} cached liked songs. Spotify refresh paused; check the status message for cooldown details.`
+          : 'Liked Songs request failed. Check the status message above for Spotify details, then retry after the cooldown.'
         : loaded.loaded === 0
           ? 'Spotify returned 0 liked songs for this account/token.'
           : loaded.fromCache
@@ -809,6 +864,13 @@ function App() {
 
       const cached = await loadCachedLikedAlbums();
       if (cached.length > 0) setLikedAlbums(cached.map((e) => e.album));
+      const cacheMeta = await loadCacheMeta('likedAlbums');
+      if (cached.length > 0 && cacheMeta?.complete && isFresh(cacheMeta.syncedAt, LIBRARY_CACHE_REVALIDATE_MS)) {
+        const message = `Loaded ${cached.length} liked albums from cache.`;
+        setInfoMessage(message);
+        finishSection(message);
+        return;
+      }
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
@@ -826,6 +888,11 @@ function App() {
 
           if (!latestRemote || latestRemote <= newestAddedAt) {
             if (total <= cached.length) {
+              ensureCacheWrite('Liked Albums metadata', await saveCacheMeta('likedAlbums', {
+                syncedAt: Date.now(),
+                total,
+                complete: true,
+              }));
               return { loaded: cached.length, total, capped: false, fromCache: true };
             }
 
@@ -861,11 +928,19 @@ function App() {
         });
         setLikedAlbums(merged.map((e) => e.album));
         ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(merged));
-        return { loaded: merged.length, total, capped: !hitCache && total > merged.length, fromCache: false };
+        const capped = !hitCache && total > merged.length;
+        ensureCacheWrite('Liked Albums metadata', await saveCacheMeta('likedAlbums', {
+          syncedAt: Date.now(),
+          total,
+          complete: !capped,
+        }));
+        return { loaded: merged.length, total, capped, fromCache: false };
       });
 
       const message = loaded === null
-        ? 'Liked Albums request failed. Check the status message above for Spotify details.'
+        ? cached.length > 0
+          ? `Showing ${cached.length} cached liked albums. Spotify refresh paused; check the status message for cooldown details.`
+          : 'Liked Albums request failed. Check the status message above for Spotify details.'
         : loaded.loaded === 0
           ? 'Spotify returned 0 liked albums for this account/token.'
           : loaded.fromCache
@@ -881,18 +956,29 @@ function App() {
     if (nav === 'Playlists') {
       const cached = await loadCachedPlaylists();
       if (cached.length > 0) setPlaylists(cached);
+      const cacheMeta = await loadCacheMeta('playlists');
+      if (cached.length > 0 && isFresh(cacheMeta?.syncedAt, LIBRARY_CACHE_REVALIDATE_MS)) {
+        finishSection(`Loaded ${cached.length} playlists from cache.`);
+        return;
+      }
 
       const loaded = await withApi(async (api) => {
-        // Playlists can be reordered/deleted so always do a fresh full fetch
         const data = await api.getPlaylists(50);
         setPlaylists(data.items);
         ensureCacheWrite('Playlists', await saveCachedPlaylists(data.items));
+        ensureCacheWrite('Playlists metadata', await saveCacheMeta('playlists', {
+          syncedAt: Date.now(),
+          total: data.total,
+          complete: !data.next,
+        }));
         return data.items.length;
       });
 
       finishSection(
         loaded === null
-          ? 'Playlists request failed. Check the status message above for Spotify details.'
+          ? cached.length > 0
+            ? `Showing ${cached.length} cached playlists. Spotify refresh paused; check the status message for cooldown details.`
+            : 'Playlists request failed. Check the status message above for Spotify details.'
           : loaded === 0
             ? 'Spotify returned 0 playlists for this account/token.'
             : `Loaded ${loaded} playlists.`,
@@ -902,8 +988,13 @@ function App() {
 
     await withApi(async (api) => {
       if (nav === 'Recently Played') {
+        if (recentlyPlayed.length > 0 && isFresh(lastRecentlyPlayedFetchAtRef.current, RECENTLY_PLAYED_REVALIDATE_MS)) {
+          return;
+        }
+
         const data = await api.getRecentlyPlayed(50);
         setRecentlyPlayed(data.items);
+        lastRecentlyPlayedFetchAtRef.current = Date.now();
         return;
       }
 
@@ -1005,10 +1096,12 @@ function App() {
   useEffect(() => {
     const refreshCooldownSummary = () => {
       const activeCooldowns = getActiveSpotifyCooldowns();
-      const summary = activeCooldowns
+      const cooldownText = activeCooldowns
         .map((cooldown) => `${cooldown.path}: ${formatCooldownRemaining(cooldown.until)}`)
         .join(' | ');
-      setCooldownSummary(summary);
+      const budget = getSpotifyRequestBudget();
+      const budgetText = `Request budget: ${budget.used}/${budget.budget} in ${Math.round(budget.windowMs / 1000)}s`;
+      setCooldownSummary(cooldownText ? `${budgetText} | Cooldowns: ${cooldownText}` : budgetText);
     };
 
     refreshCooldownSummary();

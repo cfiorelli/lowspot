@@ -20,6 +20,56 @@ interface PageResponse<T> {
   total: number;
 }
 
+const REQUEST_LOG_KEY = 'lowspot:spotify-request-log';
+
+let sharedRequestLog: number[] | null = null;
+
+function readStoredRequestLog(): number[] {
+  if (sharedRequestLog) return sharedRequestLog;
+  if (typeof localStorage === 'undefined') {
+    sharedRequestLog = [];
+    return sharedRequestLog;
+  }
+
+  try {
+    const raw = localStorage.getItem(REQUEST_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    sharedRequestLog = Array.isArray(parsed)
+      ? parsed.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      : [];
+  } catch {
+    sharedRequestLog = [];
+  }
+
+  return sharedRequestLog;
+}
+
+function writeStoredRequestLog(nextLog: number[]): void {
+  sharedRequestLog = nextLog;
+  if (typeof localStorage === 'undefined') return;
+
+  try {
+    localStorage.setItem(REQUEST_LOG_KEY, JSON.stringify(nextLog));
+  } catch {
+    // Losing telemetry is safer than blocking playback or library loading.
+  }
+}
+
+export function getSpotifyRequestBudget() {
+  const now = Date.now();
+  const recent = readStoredRequestLog().filter((t) => t > now - RATE_LIMIT_WINDOW_MS);
+  if (recent.length !== readStoredRequestLog().length) {
+    writeStoredRequestLog(recent);
+  }
+
+  return {
+    used: recent.length,
+    budget: RATE_LIMIT_BUDGET,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    resetInMs: recent.length > 0 ? Math.max(0, recent[0] + RATE_LIMIT_WINDOW_MS - now) : 0,
+  };
+}
+
 export class SpotifyRateLimitError extends Error {
   path: string;
   retryAfterMs: number;
@@ -36,10 +86,6 @@ export class SpotifyApiClient {
   private accessToken: string;
   private rateLimitedUntil = 0;
   private cancelled = false;
-
-  // Sliding-window log: timestamps of recent requests.
-  // Enforces RATE_LIMIT_BUDGET req / RATE_LIMIT_WINDOW_MS proactively.
-  private requestLog: number[] = [];
 
   constructor(accessToken: string) {
     this.accessToken = accessToken;
@@ -63,18 +109,20 @@ export class SpotifyApiClient {
     if (this.cancelled) throw new Error('cancelled');
 
     const now = Date.now();
-    this.requestLog = this.requestLog.filter((t) => t > now - RATE_LIMIT_WINDOW_MS);
+    const requestLog = readStoredRequestLog().filter((t) => t > now - RATE_LIMIT_WINDOW_MS);
 
-    if (this.requestLog.length < RATE_LIMIT_BUDGET) {
-      this.requestLog.push(now);
+    if (requestLog.length < RATE_LIMIT_BUDGET) {
+      requestLog.push(now);
+      writeStoredRequestLog(requestLog);
       return;
     }
 
-    const oldest = this.requestLog[0];
+    writeStoredRequestLog(requestLog);
+    const oldest = requestLog[0];
     const waitMs = oldest + RATE_LIMIT_WINDOW_MS - now + 100;
     console.info(
       '[spotify] proactive throttle —',
-      this.requestLog.length,
+      requestLog.length,
       'req in last 30s, waiting',
       Math.ceil(waitMs / 1000) + 's',
     );
@@ -83,11 +131,6 @@ export class SpotifyApiClient {
   }
 
   private async doRequest<T>(path: string, init: RequestInit, attempt: number): Promise<T> {
-    // Proactive throttle runs first — keeps us under the budget.
-    await this.waitForBudget();
-
-    if (this.cancelled) throw new Error('cancelled');
-
     // Cross-session persisted cooldown. If it is short enough, wait it out;
     // otherwise surface it to the caller so the UI can show a countdown.
     const persistedCooldown = getSpotifyCooldown(path);
@@ -101,6 +144,12 @@ export class SpotifyApiClient {
         await this.wait(remainingMs);
       }
     }
+
+    // Proactive throttle runs immediately before fetch so skipped requests
+    // during cooldowns do not consume local budget.
+    await this.waitForBudget();
+
+    if (this.cancelled) throw new Error('cancelled');
 
     // In-session rate-limit pause set by a 429 response — wait, then proceed.
     const pause = this.rateLimitedUntil - Date.now();
@@ -147,10 +196,6 @@ export class SpotifyApiClient {
       );
       this.rateLimitedUntil = Math.max(this.rateLimitedUntil, Date.now() + backoff);
       setSpotifyCooldown(path, backoff);
-      if (attempt < 3 && !this.cancelled) {
-        // Next call's in-session pause check will handle the wait.
-        return this.doRequest(path, init, attempt + 1);
-      }
       throw new SpotifyRateLimitError(path, backoff);
     }
 
@@ -294,32 +339,19 @@ export class SpotifyApiClient {
     return runSearch('track,album,artist,playlist', 10)
       .then((base) => normalize(base))
       .then(async (base) => {
-        let merged = base;
-
-        try {
-          const extra = await runSearch('show,audiobook', 10);
-          merged = {
-            ...merged,
-            shows: extra.shows ?? { items: [] },
-            audiobooks: extra.audiobooks ?? { items: [] },
-          };
-        } catch {
-          // Ignore unavailable extra content categories.
-        }
-
         const coreCount =
-          (merged.tracks?.items.length ?? 0) +
-          (merged.albums?.items.length ?? 0) +
-          (merged.artists?.items.length ?? 0) +
-          (merged.playlists?.items.length ?? 0);
+          (base.tracks?.items.length ?? 0) +
+          (base.albums?.items.length ?? 0) +
+          (base.artists?.items.length ?? 0) +
+          (base.playlists?.items.length ?? 0);
 
-        if (coreCount > 0) return merged;
+        if (coreCount > 0) return base;
 
         try {
           const tracksOnly = await runSearch('track', 20);
-          return { ...merged, tracks: tracksOnly.tracks ?? { items: [] } };
+          return { ...base, tracks: tracksOnly.tracks ?? { items: [] } };
         } catch {
-          return merged;
+          return base;
         }
       });
   }

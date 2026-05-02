@@ -18,6 +18,14 @@ export interface CacheWriteResult {
   error?: string;
 }
 
+export type CacheKind = 'likedSongs' | 'likedAlbums' | 'playlists';
+
+export interface CacheMeta {
+  syncedAt: number;
+  total?: number;
+  complete?: boolean;
+}
+
 // Slim storage formats: only the fields the UI/playback path needs.
 // The raw Spotify objects carry large available_markets/images/href payloads.
 interface StoredSong {
@@ -48,6 +56,12 @@ const KEYS = {
   likedSongs: 'lowspot:cache:liked-songs-v2',
   likedAlbums: 'lowspot:cache:liked-albums-v2',
   playlists: 'lowspot:cache:playlists',
+};
+
+const META_KEYS: Record<CacheKind, string> = {
+  likedSongs: `${KEYS.likedSongs}:meta`,
+  likedAlbums: `${KEYS.likedAlbums}:meta`,
+  playlists: `${KEYS.playlists}:meta`,
 };
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
@@ -310,4 +324,19 @@ export async function loadCachedPlaylists(): Promise<SpotifyPlaylist[]> {
 
 export async function saveCachedPlaylists(items: SpotifyPlaylist[]): Promise<CacheWriteResult> {
   return saveRaw(KEYS.playlists, items.filter(isSpotifyPlaylist));
+}
+
+function isCacheMeta(value: unknown): value is CacheMeta {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.syncedAt === 'number' && Number.isFinite(v.syncedAt);
+}
+
+export async function loadCacheMeta(kind: CacheKind): Promise<CacheMeta | null> {
+  const raw = await loadRaw<unknown>(META_KEYS[kind]);
+  return isCacheMeta(raw) ? raw : null;
+}
+
+export async function saveCacheMeta(kind: CacheKind, meta: CacheMeta): Promise<CacheWriteResult> {
+  return saveRaw(META_KEYS[kind], meta);
 }

@@ -17,17 +17,18 @@ export const REQUIRED_SCOPES = [
   'streaming',
 ] as const;
 
-// Playback polling: 8s keeps us well within Spotify's rate limits.
+// Playback polling: keep this conservative. Spotify rate limits are app-wide
+// in a rolling 30 second window, and development-mode apps have lower quota.
 // Do NOT lower without adjusting RATE_LIMIT_BUDGET.
-export const POLL_INTERVAL_MS = 8_000;
+export const POLL_INTERVAL_MS = 15_000;
 
-// Delay between library-sync page fetches. 500ms ≈ 60 req/30s for sync,
-// leaving budget for polling + user actions.
-export const LIBRARY_PAGE_DELAY_MS = 500;
+// Delay between library-sync page fetches. 1000ms is deliberately slower than
+// the theoretical limit so playback, search, and UI probes still have room.
+export const LIBRARY_PAGE_DELAY_MS = 1_000;
 
-// Proactive client-side rate limit. Spotify's window is ~30s.
-// Cap at 100 req/30s (empirical limit ~180) to prevent 429s entirely.
-export const RATE_LIMIT_BUDGET = 100;
+// Proactive client-side request budget for Spotify's rolling 30s window.
+// Spotify does not publish the exact number and it varies by quota mode.
+export const RATE_LIMIT_BUDGET = 40;
 export const RATE_LIMIT_WINDOW_MS = 30_000;
 
 // The app starts in the compact/collapsed view. The codebase calls that mode "lean".
