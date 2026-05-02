@@ -321,7 +321,7 @@ function App() {
 
     try {
       await runOnce();
-      void refreshPlayback();
+      await refreshPlayback();
       return true;
     } catch (error) {
       const firstMessage = error instanceof Error ? error.message : 'Unexpected Spotify API error.';
@@ -334,7 +334,7 @@ function App() {
       // executes the command. Don't log it as an error or reset optimistic UI — just
       // verify state via refresh.
       if (/Restriction violated/i.test(firstMessage)) {
-        void refreshPlayback();
+        await refreshPlayback();
         return true;
       }
 
@@ -343,7 +343,7 @@ function App() {
           await refreshPlayback();
           await new Promise((resolve) => setTimeout(resolve, 250));
           await runOnce();
-          void refreshPlayback();
+          await refreshPlayback();
           return true;
         } catch (retryError) {
           const retryMessage = retryError instanceof Error ? retryError.message : firstMessage;
@@ -588,6 +588,21 @@ function App() {
           : { ...mockPlayback, is_playing: true },
       );
       setInfoMessage(playback?.is_playing ? 'Mock playback paused.' : 'Mock playback playing.');
+      return;
+    }
+
+    // If nothing is visibly loaded in Now Playing, never ask Spotify to
+    // resume an unknown previous context. Only start from a visible row.
+    if (!playback?.item) {
+      if (tableRows.length > 0 && activeNav !== 'Now Playing') {
+        const startIdx = effectiveShuffle
+          ? randomIndex(tableRows.length)
+          : Math.min(selectedRow, tableRows.length - 1);
+        void playSelectedRow(startIdx);
+        return;
+      }
+
+      setInfoMessage('Choose music from search or your library before pressing Play.');
       return;
     }
 
@@ -1104,7 +1119,8 @@ function App() {
     return <LoginScreen onLogin={handleLogin} errorMessage={errorMessage} />;
   }
 
-  const playbackControlsDisabled = !(playback?.device?.id || sdkDeviceId);
+  const canPlayVisibleSelection = mode === 'expanded' && activeNav !== 'Now Playing' && tableRows.length > 0;
+  const playbackControlsDisabled = !(playback?.item || canPlayVisibleSelection);
   const playbackSettingsDisabled = !playback?.device?.id;
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
 

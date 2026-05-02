@@ -10,12 +10,16 @@ interface ShortcutConfig {
 
 export const registerShortcuts = (shortcuts: ShortcutConfig[]) => {
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.repeat) {
+      return;
+    }
+
     for (const shortcut of shortcuts) {
       const keyMatch = event.key.toLowerCase() === shortcut.key.toLowerCase();
-      const metaMatch = shortcut.meta === undefined || shortcut.meta === event.metaKey;
-      const ctrlMatch = shortcut.ctrl === undefined || shortcut.ctrl === event.ctrlKey;
+      const metaMatch = shortcut.meta === undefined ? !event.metaKey : shortcut.meta === event.metaKey;
+      const ctrlMatch = shortcut.ctrl === undefined ? !event.ctrlKey : shortcut.ctrl === event.ctrlKey;
 
-      if (!keyMatch || !metaMatch || !ctrlMatch) {
+      if (!keyMatch || !metaMatch || !ctrlMatch || event.altKey) {
         continue;
       }
 
