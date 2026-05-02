@@ -779,6 +779,14 @@ function App() {
         finishSection(message);
         return;
       }
+      if (cached.length > 0) {
+        const message = cacheMeta?.complete
+          ? `Loaded ${cached.length} cached liked songs. Spotify refresh is paused to protect quota.`
+          : `Loaded ${cached.length} cached liked songs. Cache is partial; Spotify sync is paused to protect quota.`;
+        setInfoMessage(message);
+        finishSection(message);
+        return;
+      }
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
@@ -875,6 +883,14 @@ function App() {
       const cacheMeta = await loadCacheMeta('likedAlbums');
       if (cached.length > 0 && cacheMeta?.complete && isFresh(cacheMeta.syncedAt, LIBRARY_CACHE_REVALIDATE_MS)) {
         const message = `Loaded ${cached.length} liked albums from cache.`;
+        setInfoMessage(message);
+        finishSection(message);
+        return;
+      }
+      if (cached.length > 0) {
+        const message = cacheMeta?.complete
+          ? `Loaded ${cached.length} cached liked albums. Spotify refresh is paused to protect quota.`
+          : `Loaded ${cached.length} cached liked albums. Cache is partial; Spotify sync is paused to protect quota.`;
         setInfoMessage(message);
         finishSection(message);
         return;
