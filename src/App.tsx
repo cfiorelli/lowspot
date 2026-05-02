@@ -50,6 +50,14 @@ const countSearchResults = (results: ReturnType<typeof mockSearch>): number =>
   (results.shows?.items.length ?? 0) +
   (results.audiobooks?.items.length ?? 0);
 
+const randomIndex = (length: number): number => {
+  if (length <= 0) return 0;
+
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return values[0] % length;
+};
+
 function App() {
   const {
     mode,
@@ -107,6 +115,7 @@ function App() {
   const [cooldownSummary, setCooldownSummary] = useState('');
   const [sdkConnecting, setSdkConnecting] = useState(false);
   const [sdkDeviceId, setSdkDeviceId] = useState<string | null>(null);
+  const effectiveShuffle = pendingShuffle ?? Boolean(playback?.shuffle_state);
 
   const completeAuth = async (code: string, state?: string | null) => {
     try {
@@ -574,10 +583,10 @@ function App() {
       return;
     }
 
-    // No active device but we have rows — start playing from the current section.
+    // No active device but we have rows: start playing from the current section.
     if (!playback?.device?.id && !sdkDeviceId && tableRows.length > 0 && activeNav !== 'Now Playing') {
       const startIdx = effectiveShuffle
-        ? Math.floor(Math.random() * tableRows.length)
+        ? randomIndex(tableRows.length)
         : Math.min(selectedRow, tableRows.length - 1);
       void playSelectedRow(startIdx);
       return;
@@ -1095,7 +1104,6 @@ function App() {
   }
 
   const playbackControlsDisabled = !(playback?.device?.id || sdkDeviceId);
-  const effectiveShuffle = pendingShuffle ?? Boolean(playback?.shuffle_state);
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
 
   return (
