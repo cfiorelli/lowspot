@@ -24,29 +24,26 @@ bd close <id>         # Complete work
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**GitHub promotion policy overrides any older push-at-session-end guidance.** GitHub `main` represents the stable/shared version.
 
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. File issues for remaining work.
+2. Run quality gates when code changed.
+3. Update/close Beads issues for completed local work.
+4. Commit local changes when they are useful to preserve.
+5. Do **not** push to GitHub unless the user explicitly says to push or confirms the dev build should be promoted to stable.
+6. When the user does approve promotion, run:
    ```bash
    git pull --rebase
    bd dolt push
    git push
-   git status  # MUST show "up to date with origin"
+   git status
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+7. Hand off with whether changes are local-only or pushed.
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+**Critical rules:**
+- Never say code is on GitHub unless `git push` succeeded.
+- Never push experimental/debug work just because a session is ending.
+- If a push is approved and fails, resolve and retry until it succeeds or clearly report the blocker.
 <!-- END BEADS INTEGRATION -->
 
 
@@ -63,6 +60,7 @@ npm run tauri:build
 
 lowspot is a Tauri 2 desktop app with a React/TypeScript/Vite frontend.
 
+- GitHub `main` is the stable/shared source. Use `npm run tauri:dev` for active development testing, and only promote with `npm run tauri:build` plus a GitHub push after the user approves the dev build as stable.
 - Tokens live in Tauri Store (`lowspot_tokens.json`) so login survives packaged app installs.
 - Spotify library cache lives in Tauri Store (`lowspot_library_cache.json`) with IndexedDB/localStorage only as migration/fallback. Do not move durable library cache back to WebView-only storage.
 - WebView storage origins differ between `tauri dev`, browser preview, and packaged installs. A cache visible in dev may not exist in the installed app.
