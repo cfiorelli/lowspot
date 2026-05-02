@@ -1,6 +1,7 @@
 import type { SearchResponse, SpotifyAlbum, SpotifyPlaylist, SpotifyTrack } from '../spotify/types';
 import type { PlaybackState, QueueResponse, RecentlyPlayedItem } from '../spotify/types';
 import type { NavItem } from '../utils/constants';
+import type { SpotifyDiagnosticEntry } from '../utils/spotifyDiagnostics';
 import { NAV_ITEMS } from '../utils/constants';
 import { buildRowsForNav } from './rows';
 import { formatArtists, formatDuration } from '../utils/format';
@@ -27,9 +28,11 @@ interface ExpandedViewProps {
   sectionLoading: boolean;
   sectionMessage: string;
   cooldownSummary: string;
+  spotifyDiagnostics: SpotifyDiagnosticEntry[];
   librarySyncAvailable: boolean;
   onNavSelect: (nav: NavItem) => void;
   onCollapse: () => void;
+  onClearSpotifyDiagnostics: () => void;
   onSyncLibraryPage: () => void;
   onSearch: (query: string) => void;
   onRowSelect: (index: number) => void;
@@ -44,6 +47,28 @@ interface ExpandedViewProps {
   onConnectPlaybackSdk: () => void;
   onLogout: () => void;
 }
+
+const formatDiagnosticTime = (timestamp: number): string =>
+  new Date(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+const formatDiagnosticStatus = (entry: SpotifyDiagnosticEntry): string => {
+  if (entry.outcome === 'response') {
+    const retry = entry.retryAfter ? ` retry-after=${entry.retryAfter}s` : '';
+    return `${entry.status ?? 'response'}${retry}`;
+  }
+  if (entry.outcome === 'local-cooldown') {
+    return `local cooldown ${Math.ceil((entry.retryAfterMs ?? 0) / 1000)}s`;
+  }
+  if (entry.outcome === 'local-throttle') {
+    const budget = entry.budgetUsed && entry.budgetLimit ? ` ${entry.budgetUsed}/${entry.budgetLimit}` : '';
+    return `local throttle${budget} ${Math.ceil((entry.retryAfterMs ?? 0) / 1000)}s`;
+  }
+  return entry.error ? `network error ${entry.error}` : 'network error';
+};
 
 export function ExpandedView({
   activeNav,
@@ -67,9 +92,11 @@ export function ExpandedView({
   sectionLoading,
   sectionMessage,
   cooldownSummary,
+  spotifyDiagnostics,
   librarySyncAvailable,
   onNavSelect,
   onCollapse,
+  onClearSpotifyDiagnostics,
   onSyncLibraryPage,
   onSearch,
   onRowSelect,
@@ -215,6 +242,22 @@ export function ExpandedView({
               <p className="mono">http://127.0.0.1:7878/callback</p>
               <p>Spotify cooldown:</p>
               <p className="mono">{cooldownSummary || 'No active app-recorded cooldown.'}</p>
+              <div className="settings-row">
+                <p>Spotify request ledger:</p>
+                <button type="button" onClick={onClearSpotifyDiagnostics}>
+                  Clear Ledger
+                </button>
+              </div>
+              <div className="diagnostic-log" aria-label="Spotify request diagnostics">
+                {spotifyDiagnostics.length === 0 ? (
+                  <p className="mono">No Spotify requests recorded.</p>
+                ) : spotifyDiagnostics.slice(-12).reverse().map((entry) => (
+                  <p key={entry.id} className="mono">
+                    {formatDiagnosticTime(entry.timestamp)} {entry.context} {entry.method} {entry.path}{' -> '}{formatDiagnosticStatus(entry)}
+                    {entry.bodySnippet ? ` ${entry.bodySnippet}` : ''}
+                  </p>
+                ))}
+              </div>
               <p>Local playback device:</p>
               <p className="mono">{sdkDeviceId ? `Connected: ${sdkDeviceId}` : sdkMessage}</p>
               <button type="button" onClick={onConnectPlaybackSdk} disabled={sdkConnecting}>

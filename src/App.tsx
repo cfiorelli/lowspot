@@ -32,6 +32,12 @@ import {
 } from './utils/libraryCache';
 import type { CacheWriteResult } from './utils/libraryCache';
 import { formatCooldownRemaining, getActiveSpotifyCooldowns, getSpotifyCooldown } from './utils/spotifyCooldown';
+import {
+  clearSpotifyDiagnostics,
+  loadSpotifyDiagnostics,
+  recordSpotifyDiagnostic,
+  type SpotifyDiagnosticEntry,
+} from './utils/spotifyDiagnostics';
 import { registerShortcuts } from './utils/shortcuts';
 import './styles/app.css';
 import './styles/lean.css';
@@ -128,6 +134,7 @@ function App() {
   const [loadingSection, setLoadingSection] = useState<typeof activeNav | null>(null);
   const [sectionMessage, setSectionMessage] = useState('');
   const [cooldownSummary, setCooldownSummary] = useState('');
+  const [spotifyDiagnostics, setSpotifyDiagnostics] = useState<SpotifyDiagnosticEntry[]>([]);
   const [sdkConnecting, setSdkConnecting] = useState(false);
   const [sdkDeviceId, setSdkDeviceId] = useState<string | null>(null);
   const effectiveShuffle = pendingShuffle ?? Boolean(playback?.shuffle_state);
@@ -223,13 +230,14 @@ function App() {
     playMockTrack(mockLikedSongs[nextIndex].uri);
   };
 
-  const withApi = async <T,>(cb: (api: SpotifyApiClient) => Promise<T>): Promise<T | null> => {
-    if (!apiRef.current) {
+  const withApi = async <T,>(cb: (api: SpotifyApiClient) => Promise<T>, context = 'withApi'): Promise<T | null> => {
+    const api = apiRef.current;
+    if (!api) {
       return null;
     }
 
     try {
-      const result = await cb(apiRef.current);
+      const result = await api.withDiagnosticContext(context, () => cb(api));
       setErrorMessage('');
       return result;
     } catch (error) {
@@ -284,10 +292,17 @@ function App() {
   const shouldRetryPlaybackError = (message: string): boolean =>
     /string did not match the expected pattern|\b502\b|bad gateway|no active device/i.test(message);
 
-  const guardPlaybackEndpointCooldown = (): boolean => {
+  const guardPlaybackEndpointCooldown = (context = 'playback-control'): boolean => {
     const cooldown = getSpotifyCooldown('/me/player');
     if (!cooldown) return false;
 
+    void recordSpotifyDiagnostic({
+      context: `guard:${context}`,
+      method: 'LOCAL',
+      path: cooldown.path,
+      outcome: 'local-cooldown',
+      retryAfterMs: Math.max(0, cooldown.until - Date.now()),
+    });
     setErrorMessage(
       `lowspot is pausing Spotify playback controls to protect quota. Try again in ${formatCooldownRemaining(cooldown.until)}.`,
     );
@@ -304,7 +319,7 @@ function App() {
       return false;
     }
 
-    const runOnce = async () => {
+    const runOnce = async () => api.withDiagnosticContext(`playback:${operation}`, async () => {
       const latestPlayback = useAppStore.getState().playback;
       const sdkDeviceId = sdkDeviceIdRef.current;
       const activeDeviceId = latestPlayback?.device?.id;
@@ -343,7 +358,7 @@ function App() {
       if (options?.ensurePlayingAfterCommand) {
         await api.play(targetDeviceId ?? undefined);
       }
-    };
+    });
 
     setErrorMessage('');
 
@@ -427,7 +442,7 @@ function App() {
         if (queueState) {
           setQueue(queueState);
         }
-      });
+      }, 'refreshPlayback');
     } finally {
       refreshPlaybackPendingRef.current = false;
     }
@@ -709,7 +724,7 @@ function App() {
       }
 
       setCurrentTrackLiked(!currentTrackLiked);
-    });
+    }, currentTrackLiked ? 'toggleLike:remove' : 'toggleLike:save');
   };
 
   const handleSearch = async (query: string) => {
@@ -755,7 +770,7 @@ function App() {
       setSearchResults(result);
       searchCacheRef.current.set(searchCacheKey, { at: Date.now(), results: result });
       return countSearchResults(result);
-    });
+    }, `search:${q}`);
 
     const message = resultCount === null
       ? `Search failed for "${q}". Check the status log for details.`
@@ -877,7 +892,7 @@ function App() {
           complete: !capped,
         }));
         return { loaded: merged.length, total, capped, fromCache: false };
-      });
+      }, 'loadSection:Liked Songs');
 
       const message = loaded === null
         ? cached.length > 0
@@ -982,7 +997,7 @@ function App() {
           complete: !capped,
         }));
         return { loaded: merged.length, total, capped, fromCache: false };
-      });
+      }, 'loadSection:Liked Albums');
 
       const message = loaded === null
         ? cached.length > 0
@@ -1019,7 +1034,7 @@ function App() {
           complete: !data.next,
         }));
         return data.items.length;
-      });
+      }, 'loadSection:Playlists');
 
       finishSection(
         loaded === null
@@ -1048,7 +1063,7 @@ function App() {
       if (nav === 'Queue' || nav === 'Now Playing') {
         await refreshPlayback();
       }
-    });
+    }, `loadSection:${nav}`);
     finishSection('');
   };
 
@@ -1062,6 +1077,13 @@ function App() {
 
     const cooldown = getSpotifyCooldown(nav === 'Liked Songs' ? '/me/tracks' : '/me/albums');
     if (cooldown) {
+      void recordSpotifyDiagnostic({
+        context: `syncOneLibraryPage:${nav}`,
+        method: 'LOCAL',
+        path: cooldown.path,
+        outcome: 'local-cooldown',
+        retryAfterMs: Math.max(0, cooldown.until - Date.now()),
+      });
       setErrorMessage(
         `lowspot is pausing ${nav} sync to protect Spotify quota. Try again in ${formatCooldownRemaining(cooldown.until)}.`,
       );
@@ -1094,7 +1116,7 @@ function App() {
             complete,
           }));
           return { added: merged.length - cached.length, loaded: merged.length, total: page.total, complete };
-        });
+        }, 'syncOneLibraryPage:Liked Songs');
 
         const message = loaded === null
           ? `Kept ${cached.length} cached liked songs. Spotify sync paused; check the status message for cooldown details.`
@@ -1127,7 +1149,7 @@ function App() {
           complete,
         }));
         return { added: merged.length - cached.length, loaded: merged.length, total: page.total, complete };
-      });
+      }, 'syncOneLibraryPage:Liked Albums');
 
       const message = loaded === null
         ? `Kept ${cached.length} cached liked albums. Spotify sync paused; check the status message for cooldown details.`
@@ -1242,6 +1264,16 @@ function App() {
 
     refreshCooldownSummary();
     const timer = setInterval(refreshCooldownSummary, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const refreshDiagnostics = () => {
+      void loadSpotifyDiagnostics().then(setSpotifyDiagnostics);
+    };
+
+    refreshDiagnostics();
+    const timer = setInterval(refreshDiagnostics, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -1433,6 +1465,7 @@ function App() {
           sectionLoading={loadingSection === activeNav}
           sectionMessage={sectionMessage}
           cooldownSummary={cooldownSummary}
+          spotifyDiagnostics={spotifyDiagnostics}
           librarySyncAvailable={isLibraryNav(activeNav)}
           onNavSelect={(nav) => {
             setActiveNav(nav);
@@ -1443,6 +1476,9 @@ function App() {
           onCollapse={() => {
             setMode('lean');
             void resizeForMode('lean');
+          }}
+          onClearSpotifyDiagnostics={() => {
+            void clearSpotifyDiagnostics().then(() => setSpotifyDiagnostics([]));
           }}
           onSyncLibraryPage={() => {
             if (isLibraryNav(activeNav)) {
@@ -1521,7 +1557,7 @@ function App() {
               return;
             }
 
-            if (guardPlaybackEndpointCooldown()) {
+            if (guardPlaybackEndpointCooldown('toggle-shuffle')) {
               return;
             }
 
@@ -1562,7 +1598,7 @@ function App() {
               return;
             }
 
-            if (guardPlaybackEndpointCooldown()) {
+            if (guardPlaybackEndpointCooldown('cycle-repeat')) {
               return;
             }
 
@@ -1603,7 +1639,7 @@ function App() {
             })();
           }}
           onSetVolume={(volumePercent) => {
-            if (guardPlaybackEndpointCooldown()) {
+            if (guardPlaybackEndpointCooldown('set-volume')) {
               return;
             }
 

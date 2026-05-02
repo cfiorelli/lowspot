@@ -187,6 +187,40 @@
 .settings-note {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-note p {
+  margin: 0;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.diagnostic-log {
+  max-height: 154px;
+  overflow: auto;
+  border: 1px solid rgba(42, 50, 58, 0.75);
+  border-radius: 6px;
+  background: #0b0f12;
+}
+
+.diagnostic-log .mono {
+  margin: 0;
+  padding: 4px 7px;
+  border-bottom: 1px solid rgba(42, 50, 58, 0.35);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-log .mono:last-child {
+  border-bottom: 0;
 }
 
 .table-head {

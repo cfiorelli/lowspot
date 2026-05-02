@@ -1,4 +1,5 @@
 import { RATE_LIMIT_BUDGET, RATE_LIMIT_WINDOW_MS, SPOTIFY_API_BASE } from '../utils/constants';
+import { recordSpotifyDiagnostic } from '../utils/spotifyDiagnostics';
 import { getSpotifyCooldown, setSpotifyCooldown } from '../utils/spotifyCooldown';
 import type {
   Device,
@@ -98,6 +99,7 @@ export class SpotifyApiClient {
   private accessToken: string;
   private rateLimitedUntil = 0;
   private cancelled = false;
+  private diagnosticContext = 'unknown';
 
   constructor(accessToken: string) {
     this.accessToken = accessToken;
@@ -111,13 +113,23 @@ export class SpotifyApiClient {
     this.cancelled = true;
   }
 
+  async withDiagnosticContext<T>(context: string, cb: () => Promise<T>): Promise<T> {
+    const previousContext = this.diagnosticContext;
+    this.diagnosticContext = context;
+    try {
+      return await cb();
+    } finally {
+      this.diagnosticContext = previousContext;
+    }
+  }
+
   private wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Delay if we have issued RATE_LIMIT_BUDGET requests in the last RATE_LIMIT_WINDOW_MS.
   // This is the primary protection against 429s — prevents them from occurring.
-  private async waitForBudget(): Promise<void> {
+  private async waitForBudget(path: string, method: string): Promise<void> {
     if (this.cancelled) throw new Error('cancelled');
 
     const now = Date.now();
@@ -138,17 +150,36 @@ export class SpotifyApiClient {
       'req in last 30s, waiting',
       Math.ceil(waitMs / 1000) + 's',
     );
+    void recordSpotifyDiagnostic({
+      context: this.diagnosticContext,
+      method,
+      path,
+      outcome: 'local-throttle',
+      retryAfterMs: waitMs,
+      budgetUsed: requestLog.length,
+      budgetLimit: RATE_LIMIT_BUDGET,
+    });
     await this.wait(Math.max(waitMs, 100));
-    return this.waitForBudget();
+    return this.waitForBudget(path, method);
   }
 
   private async doRequest<T>(path: string, init: RequestInit, attempt: number): Promise<T> {
+    const method = init.method ?? 'GET';
+    const startedAt = Date.now();
+
     // Cross-session persisted cooldown. If it is short enough, wait it out;
     // otherwise surface it to the caller so the UI can show a countdown.
     const persistedCooldown = getSpotifyCooldown(path);
     if (persistedCooldown) {
       const remainingMs = persistedCooldown.until - Date.now();
       if (remainingMs > 0) {
+        void recordSpotifyDiagnostic({
+          context: this.diagnosticContext,
+          method,
+          path: persistedCooldown.path,
+          outcome: 'local-cooldown',
+          retryAfterMs: remainingMs,
+        });
         throw new SpotifyRateLimitError(
           persistedCooldown.path,
           remainingMs,
@@ -160,13 +191,20 @@ export class SpotifyApiClient {
 
     // Proactive throttle runs immediately before fetch so skipped requests
     // during cooldowns do not consume local budget.
-    await this.waitForBudget();
+    await this.waitForBudget(path, method);
 
     if (this.cancelled) throw new Error('cancelled');
 
     // In-session rate-limit pause set by a 429 response — wait, then proceed.
     const pause = this.rateLimitedUntil - Date.now();
     if (pause > 0) {
+      void recordSpotifyDiagnostic({
+        context: this.diagnosticContext,
+        method,
+        path,
+        outcome: 'local-cooldown',
+        retryAfterMs: pause,
+      });
       throw new SpotifyRateLimitError(path, pause, 'local');
     }
 
@@ -183,6 +221,15 @@ export class SpotifyApiClient {
         },
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void recordSpotifyDiagnostic({
+        context: this.diagnosticContext,
+        method,
+        path,
+        outcome: 'network-error',
+        durationMs: Date.now() - startedAt,
+        error: message,
+      });
       if (attempt < 3 && !this.cancelled) {
         await this.wait(Math.min(300 * 2 ** attempt, 5000));
         return this.doRequest(path, init, attempt + 1);
@@ -197,6 +244,18 @@ export class SpotifyApiClient {
       // 30s flat fallback — matches Spotify's rolling window length.
       const backoff = retryAfterSec !== null ? retryAfterSec * 1000 : 30_000;
       const body = await response.text().catch(() => '');
+      void recordSpotifyDiagnostic({
+        context: this.diagnosticContext,
+        method,
+        path,
+        outcome: 'response',
+        status: response.status,
+        statusText: response.statusText,
+        retryAfter: header,
+        retryAfterMs: backoff,
+        durationMs: Date.now() - startedAt,
+        bodySnippet: body.slice(0, 500),
+      });
       console.warn(
         '[spotify] 429',
         path,
@@ -219,14 +278,43 @@ export class SpotifyApiClient {
     }
 
     if (response.status >= 500 && attempt < 3 && !this.cancelled) {
+      void recordSpotifyDiagnostic({
+        context: this.diagnosticContext,
+        method,
+        path,
+        outcome: 'response',
+        status: response.status,
+        statusText: response.statusText,
+        durationMs: Date.now() - startedAt,
+      });
       await this.wait(Math.min(300 * 2 ** attempt, 5000));
       return this.doRequest(path, init, attempt + 1);
     }
 
     if (!response.ok) {
       const text = await response.text();
+      void recordSpotifyDiagnostic({
+        context: this.diagnosticContext,
+        method,
+        path,
+        outcome: 'response',
+        status: response.status,
+        statusText: response.statusText,
+        durationMs: Date.now() - startedAt,
+        bodySnippet: text.slice(0, 500),
+      });
       throw new Error(`${response.status} ${response.statusText}: ${text}`);
     }
+
+    void recordSpotifyDiagnostic({
+      context: this.diagnosticContext,
+      method,
+      path,
+      outcome: 'response',
+      status: response.status,
+      statusText: response.statusText,
+      durationMs: Date.now() - startedAt,
+    });
 
     if (response.status === 204) {
       return undefined as T;
