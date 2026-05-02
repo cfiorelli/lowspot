@@ -28,6 +28,7 @@ import {
   loadCachedLikedAlbums, saveCachedLikedAlbums,
   loadCachedPlaylists, saveCachedPlaylists,
 } from './utils/libraryCache';
+import type { CacheWriteResult } from './utils/libraryCache';
 import { formatCooldownRemaining, getActiveSpotifyCooldowns } from './utils/spotifyCooldown';
 import { registerShortcuts } from './utils/shortcuts';
 import './styles/app.css';
@@ -117,6 +118,11 @@ function App() {
   const [sdkConnecting, setSdkConnecting] = useState(false);
   const [sdkDeviceId, setSdkDeviceId] = useState<string | null>(null);
   const effectiveShuffle = pendingShuffle ?? Boolean(playback?.shuffle_state);
+
+  const ensureCacheWrite = (label: string, result: CacheWriteResult) => {
+    if (result.ok) return;
+    throw new Error(`${label} cache was not saved. ${result.error ?? 'Storage write failed.'}`);
+  };
 
   const completeAuth = async (code: string, state?: string | null) => {
     try {
@@ -706,16 +712,33 @@ function App() {
         return;
       }
 
-      const cached = loadCachedLikedSongs();
+      const cached = await loadCachedLikedSongs();
       if (cached.length > 0) setLikedSongs(cached.map((e) => e.track));
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
-        const maxPages = cached.length > 0 ? MAX_INCREMENTAL_LIBRARY_PAGES : MAX_INITIAL_LIBRARY_PAGES;
+        let maxPages = cached.length > 0 ? MAX_INCREMENTAL_LIBRARY_PAGES : MAX_INITIAL_LIBRARY_PAGES;
         let offset = 0;
-        let total = 0;
+        let total = cached.length;
         let hitCache = false;
+        let appendAfterCache = false;
         const newEntries: typeof cached = [];
+
+        if (cached.length > 0) {
+          const probe = await api.getLikedSongs(1, 0);
+          total = probe.total;
+          const latestRemote = probe.items.find((item) => item.track)?.added_at ?? '';
+
+          if (!latestRemote || latestRemote <= newestAddedAt) {
+            if (total <= cached.length) {
+              return { loaded: cached.length, total, capped: false, fromCache: true };
+            }
+
+            appendAfterCache = true;
+            offset = cached.length;
+            maxPages = MAX_INCREMENTAL_LIBRARY_PAGES;
+          }
+        }
 
         for (let pagesFetched = 0; pagesFetched < maxPages; pagesFetched += 1) {
           const page = await api.getLikedSongs(LIBRARY_PAGE_SIZE, offset);
@@ -723,7 +746,7 @@ function App() {
 
           for (const item of page.items) {
             if (!item.track) continue;
-            if (newestAddedAt && item.added_at <= newestAddedAt) { hitCache = true; break; }
+            if (!appendAfterCache && newestAddedAt && item.added_at <= newestAddedAt) { hitCache = true; break; }
             newEntries.push({ added_at: item.added_at, track: item.track });
           }
 
@@ -731,30 +754,33 @@ function App() {
           offset += page.limit;
 
           const inProgress = newEntries.length + cached.length;
-          setLikedSongs([...newEntries.map((e) => e.track), ...cached.map((e) => e.track)]);
-          saveCachedLikedSongs([...newEntries, ...cached]);
+          const progressEntries = appendAfterCache ? [...cached, ...newEntries] : [...newEntries, ...cached];
+          setLikedSongs(progressEntries.map((e) => e.track));
+          ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(progressEntries));
           if (total > 0) setInfoMessage(`Loading liked songs… ${inProgress} of ${total}`);
           await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
 
         const seen = new Set<string>();
-        const merged = [...newEntries, ...cached].filter((entry) => {
+        const merged = (appendAfterCache ? [...cached, ...newEntries] : [...newEntries, ...cached]).filter((entry) => {
           if (seen.has(entry.track.id)) return false;
           seen.add(entry.track.id);
           return true;
         });
         setLikedSongs(merged.map((e) => e.track));
-        saveCachedLikedSongs(merged);
-        return { loaded: merged.length, total, capped: !hitCache && total > merged.length };
+        ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(merged));
+        return { loaded: merged.length, total, capped: !hitCache && total > merged.length, fromCache: false };
       });
 
       const message = loaded === null
         ? 'Liked Songs request failed. Check the status message above for Spotify details, then retry after the cooldown.'
         : loaded.loaded === 0
           ? 'Spotify returned 0 liked songs for this account/token.'
-          : loaded.capped
-            ? `Loaded ${loaded.loaded} of ${loaded.total} liked songs. More pages are paused to protect Spotify quota.`
-            : `Loaded ${loaded.loaded} liked songs.`;
+          : loaded.fromCache
+            ? `Loaded ${loaded.loaded} liked songs from cache.`
+            : loaded.capped
+              ? `Loaded ${loaded.loaded} of ${loaded.total} liked songs. More pages are paused to protect Spotify quota.`
+              : `Loaded ${loaded.loaded} liked songs.`;
       setInfoMessage(message);
       finishSection(message);
       return;
@@ -766,16 +792,33 @@ function App() {
         return;
       }
 
-      const cached = loadCachedLikedAlbums();
+      const cached = await loadCachedLikedAlbums();
       if (cached.length > 0) setLikedAlbums(cached.map((e) => e.album));
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
-        const maxPages = cached.length > 0 ? MAX_INCREMENTAL_LIBRARY_PAGES : MAX_INITIAL_LIBRARY_PAGES;
+        let maxPages = cached.length > 0 ? MAX_INCREMENTAL_LIBRARY_PAGES : MAX_INITIAL_LIBRARY_PAGES;
         let offset = 0;
-        let total = 0;
+        let total = cached.length;
         let hitCache = false;
+        let appendAfterCache = false;
         const newEntries: typeof cached = [];
+
+        if (cached.length > 0) {
+          const probe = await api.getLikedAlbums(1, 0);
+          total = probe.total;
+          const latestRemote = probe.items.find((item) => item.album)?.added_at ?? '';
+
+          if (!latestRemote || latestRemote <= newestAddedAt) {
+            if (total <= cached.length) {
+              return { loaded: cached.length, total, capped: false, fromCache: true };
+            }
+
+            appendAfterCache = true;
+            offset = cached.length;
+            maxPages = MAX_INCREMENTAL_LIBRARY_PAGES;
+          }
+        }
 
         for (let pagesFetched = 0; pagesFetched < maxPages; pagesFetched += 1) {
           const page = await api.getLikedAlbums(LIBRARY_PAGE_SIZE, offset);
@@ -783,49 +826,52 @@ function App() {
 
           for (const item of page.items) {
             if (!item.album) continue;
-            if (newestAddedAt && item.added_at <= newestAddedAt) { hitCache = true; break; }
+            if (!appendAfterCache && newestAddedAt && item.added_at <= newestAddedAt) { hitCache = true; break; }
             newEntries.push({ added_at: item.added_at, album: item.album });
           }
 
           if (hitCache || !page.next) break;
           offset += page.limit;
-          saveCachedLikedAlbums([...newEntries, ...cached]);
+          const progressEntries = appendAfterCache ? [...cached, ...newEntries] : [...newEntries, ...cached];
+          ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(progressEntries));
           if (total > 0) setInfoMessage(`Loading liked albums… ${newEntries.length + cached.length} of ${total}`);
           await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
 
         const seen = new Set<string>();
-        const merged = [...newEntries, ...cached].filter((entry) => {
+        const merged = (appendAfterCache ? [...cached, ...newEntries] : [...newEntries, ...cached]).filter((entry) => {
           if (seen.has(entry.album.id)) return false;
           seen.add(entry.album.id);
           return true;
         });
         setLikedAlbums(merged.map((e) => e.album));
-        saveCachedLikedAlbums(merged);
-        return { loaded: merged.length, total, capped: !hitCache && total > merged.length };
+        ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(merged));
+        return { loaded: merged.length, total, capped: !hitCache && total > merged.length, fromCache: false };
       });
 
       const message = loaded === null
         ? 'Liked Albums request failed. Check the status message above for Spotify details.'
         : loaded.loaded === 0
           ? 'Spotify returned 0 liked albums for this account/token.'
-          : loaded.capped
-            ? `Loaded ${loaded.loaded} of ${loaded.total} liked albums. More pages are paused to protect Spotify quota.`
-            : `Loaded ${loaded.loaded} liked albums.`;
+          : loaded.fromCache
+            ? `Loaded ${loaded.loaded} liked albums from cache.`
+            : loaded.capped
+              ? `Loaded ${loaded.loaded} of ${loaded.total} liked albums. More pages are paused to protect Spotify quota.`
+              : `Loaded ${loaded.loaded} liked albums.`;
       setInfoMessage(message);
       finishSection(message);
       return;
     }
 
     if (nav === 'Playlists') {
-      const cached = loadCachedPlaylists();
+      const cached = await loadCachedPlaylists();
       if (cached.length > 0) setPlaylists(cached);
 
       const loaded = await withApi(async (api) => {
         // Playlists can be reordered/deleted so always do a fresh full fetch
         const data = await api.getPlaylists(50);
         setPlaylists(data.items);
-        saveCachedPlaylists(data.items);
+        ensureCacheWrite('Playlists', await saveCachedPlaylists(data.items));
         return data.items.length;
       });
 

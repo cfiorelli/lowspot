@@ -10,10 +10,16 @@ export interface CachedLikedAlbum {
   album: SpotifyAlbum;
 }
 
-// Slim storage formats — only the fields we display, so 9000 songs stays well under
-// localStorage's 5 MB limit. Raw Spotify API objects include available_markets
-// (~100 country codes), preview_url, images, href, etc., which bloat each entry
-// 5–10× compared to what we actually use.
+type CacheBackend = 'indexedDB' | 'localStorage';
+
+export interface CacheWriteResult {
+  ok: boolean;
+  backend: CacheBackend | 'none';
+  error?: string;
+}
+
+// Slim storage formats: only the fields the UI/playback path needs.
+// The raw Spotify objects carry large available_markets/images/href payloads.
 interface StoredSong {
   added_at: string;
   id: string;
@@ -34,13 +40,104 @@ interface StoredAlbum {
   artists: Array<{ id: string; name: string }>;
 }
 
+const DB_NAME = 'lowspot-library-cache';
+const DB_VERSION = 1;
+const DB_STORE = 'snapshots';
+
 const KEYS = {
   likedSongs: 'lowspot:cache:liked-songs-v2',
   likedAlbums: 'lowspot:cache:liked-albums-v2',
   playlists: 'lowspot:cache:playlists',
 };
 
-function loadRaw<T>(key: string): T | null {
+let dbPromise: Promise<IDBDatabase | null> | null = null;
+
+const storageError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const canUseLocalStorage = (): boolean => typeof localStorage !== 'undefined';
+
+const canUseIndexedDb = (): boolean => typeof indexedDB !== 'undefined';
+
+const openCacheDb = (): Promise<IDBDatabase | null> => {
+  if (!canUseIndexedDb()) return Promise.resolve(null);
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE);
+      }
+    };
+
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+
+    request.onerror = () => {
+      console.warn('[cache] IndexedDB open failed:', storageError(request.error));
+      resolve(null);
+    };
+
+    request.onblocked = () => {
+      console.warn('[cache] IndexedDB upgrade is blocked by another lowspot window.');
+    };
+  });
+
+  return dbPromise;
+};
+
+interface IndexedDbRead<T> {
+  found: boolean;
+  value?: T;
+}
+
+async function readIndexedDb<T>(key: string): Promise<IndexedDbRead<T>> {
+  const db = await openCacheDb();
+  if (!db) return { found: false };
+
+  return new Promise((resolve) => {
+    const tx = db.transaction(DB_STORE, 'readonly');
+    const request = tx.objectStore(DB_STORE).get(key);
+
+    request.onsuccess = () => {
+      if (request.result === undefined) {
+        resolve({ found: false });
+        return;
+      }
+
+      resolve({ found: true, value: request.result as T });
+    };
+
+    request.onerror = () => {
+      console.warn('[cache] IndexedDB read failed for', key, '-', storageError(request.error));
+      resolve({ found: false });
+    };
+  });
+}
+
+async function writeIndexedDb<T>(key: string, data: T): Promise<void> {
+  const db = await openCacheDb();
+  if (!db) throw new Error('IndexedDB unavailable');
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    const request = tx.objectStore(DB_STORE).put(data, key);
+
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB write failed'));
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
+    tx.oncomplete = () => resolve();
+  });
+}
+
+function readLocalStorage<T>(key: string): T | null {
+  if (!canUseLocalStorage()) return null;
+
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -49,12 +146,58 @@ function loadRaw<T>(key: string): T | null {
   }
 }
 
-function saveRaw<T>(key: string, data: T): void {
+function writeLocalStorage<T>(key: string, data: T): CacheWriteResult {
+  if (!canUseLocalStorage()) {
+    return { ok: false, backend: 'none', error: 'localStorage unavailable' };
+  }
+
   try {
     localStorage.setItem(key, JSON.stringify(data));
+    return { ok: true, backend: 'localStorage' };
   } catch (error) {
-    console.warn('[cache] localStorage write failed for', key, '—', error instanceof Error ? error.message : String(error));
+    return { ok: false, backend: 'none', error: storageError(error) };
   }
+}
+
+function removeLocalStorage(key: string): void {
+  if (!canUseLocalStorage()) return;
+
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+async function loadRaw<T>(key: string): Promise<T | null> {
+  const indexed = await readIndexedDb<T>(key);
+  if (indexed.found) return indexed.value ?? null;
+
+  const local = readLocalStorage<T>(key);
+  if (!local) return null;
+
+  const migrated = await saveRaw(key, local);
+  if (migrated.ok && migrated.backend === 'indexedDB') {
+    removeLocalStorage(key);
+  }
+
+  return local;
+}
+
+async function saveRaw<T>(key: string, data: T): Promise<CacheWriteResult> {
+  try {
+    await writeIndexedDb(key, data);
+    removeLocalStorage(key);
+    return { ok: true, backend: 'indexedDB' };
+  } catch (indexedDbError) {
+    console.warn('[cache] IndexedDB write failed for', key, '-', storageError(indexedDbError));
+  }
+
+  const local = writeLocalStorage(key, data);
+  if (!local.ok) {
+    console.warn('[cache] localStorage write failed for', key, '-', local.error ?? 'unknown error');
+  }
+  return local;
 }
 
 function slimArtist(a: SpotifyArtist): { id: string; name: string } {
@@ -132,24 +275,24 @@ function isStoredAlbum(value: unknown): value is StoredAlbum {
     typeof v.added_at === 'string' && Array.isArray(v.artists);
 }
 
-export function loadCachedLikedSongs(): CachedLikedSong[] {
-  const raw = loadRaw<unknown>(KEYS.likedSongs);
+export async function loadCachedLikedSongs(): Promise<CachedLikedSong[]> {
+  const raw = await loadRaw<unknown>(KEYS.likedSongs);
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item): CachedLikedSong[] => isStoredSong(item) ? [expandSong(item)] : []);
 }
 
-export function saveCachedLikedSongs(items: CachedLikedSong[]): void {
-  saveRaw(KEYS.likedSongs, items.map(slimTrack));
+export async function saveCachedLikedSongs(items: CachedLikedSong[]): Promise<CacheWriteResult> {
+  return saveRaw(KEYS.likedSongs, items.map(slimTrack));
 }
 
-export function loadCachedLikedAlbums(): CachedLikedAlbum[] {
-  const raw = loadRaw<unknown>(KEYS.likedAlbums);
+export async function loadCachedLikedAlbums(): Promise<CachedLikedAlbum[]> {
+  const raw = await loadRaw<unknown>(KEYS.likedAlbums);
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item): CachedLikedAlbum[] => isStoredAlbum(item) ? [expandAlbum(item)] : []);
 }
 
-export function saveCachedLikedAlbums(items: CachedLikedAlbum[]): void {
-  saveRaw(KEYS.likedAlbums, items.map(slimAlbum));
+export async function saveCachedLikedAlbums(items: CachedLikedAlbum[]): Promise<CacheWriteResult> {
+  return saveRaw(KEYS.likedAlbums, items.map(slimAlbum));
 }
 
 function isSpotifyPlaylist(value: unknown): value is SpotifyPlaylist {
@@ -159,12 +302,12 @@ function isSpotifyPlaylist(value: unknown): value is SpotifyPlaylist {
     typeof v.uri === 'string' && typeof v.tracks === 'object';
 }
 
-export function loadCachedPlaylists(): SpotifyPlaylist[] {
-  const raw = loadRaw<unknown>(KEYS.playlists);
+export async function loadCachedPlaylists(): Promise<SpotifyPlaylist[]> {
+  const raw = await loadRaw<unknown>(KEYS.playlists);
   if (!Array.isArray(raw)) return [];
   return raw.filter(isSpotifyPlaylist);
 }
 
-export function saveCachedPlaylists(items: SpotifyPlaylist[]): void {
-  saveRaw(KEYS.playlists, items.filter(isSpotifyPlaylist));
+export async function saveCachedPlaylists(items: SpotifyPlaylist[]): Promise<CacheWriteResult> {
+  return saveRaw(KEYS.playlists, items.filter(isSpotifyPlaylist));
 }
