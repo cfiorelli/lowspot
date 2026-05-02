@@ -968,11 +968,15 @@ function App() {
       scheduled = false;
       const contentH = Math.ceil(shell.getBoundingClientRect().height);
       if (contentH < 50) return;
-      // Title-bar chrome height so setSize (outer) matches inner content height.
-      const chromeH = window.outerHeight - window.innerHeight;
+      // Use window.innerWidth (content-area width, always valid in WKWebView).
+      // window.outerWidth can return 0 before the window is fully initialized
+      // which would make setSize(0, h) hide the window entirely.
+      const logicalW = window.innerWidth;
+      if (logicalW < 100) return;
       try {
         const appWindow = getCurrentWindow();
-        await appWindow.setSize(new LogicalSize(window.outerWidth, contentH + chromeH));
+        // Tauri's setSize takes inner (content-area) dimensions on macOS.
+        await appWindow.setSize(new LogicalSize(logicalW, contentH));
       } catch { /* browser mode */ }
     };
 
