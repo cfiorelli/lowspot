@@ -30,11 +30,15 @@ export const LIBRARY_PAGE_DELAY_MS = 500;
 export const RATE_LIMIT_BUDGET = 100;
 export const RATE_LIMIT_WINDOW_MS = 30_000;
 
+// The app starts in the compact/collapsed view. The codebase calls that mode "lean".
+export const DEFAULT_MODE = 'lean' as const;
+
 export const LOGIN_SIZE = { width: 640, height: 560 };
-export const LEAN_SIZE = { width: 900, height: 280 };
+export const COLLAPSED_SIZE = { width: 900, height: 300 };
+export const LEAN_SIZE = COLLAPSED_SIZE;
 export const EXPANDED_SIZE = { width: 1080, height: 760 };
 
-export const MIN_SIZE = { width: 560, height: 240 };
+export const MIN_SIZE = { width: 560, height: 300 };
 
 export const NAV_ITEMS = [
   'Now Playing',

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { TokenSet } from '../auth/tokenStorage';
-import type { NavItem } from '../utils/constants';
+import { DEFAULT_MODE, type NavItem } from '../utils/constants';
 import type {
   PlaybackState,
   QueueResponse,
@@ -93,7 +93,7 @@ const appendLog = (
 };
 
 export const useAppStore = create<AppState>((set) => ({
-  mode: 'lean',
+  mode: DEFAULT_MODE,
   activeNav: 'Now Playing',
   authReady: false,
   profile: null,

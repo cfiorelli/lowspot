@@ -108,6 +108,7 @@ function App() {
   const sdkDeviceIdRef = useRef<string | null>(null);
   const sdkDisconnectRef = useRef<(() => void) | null>(null);
   const playbackPollTickRef = useRef(0);
+  const windowModeRef = useRef<'login' | 'lean' | 'expanded' | null>(null);
   const [pendingShuffle, setPendingShuffle] = useState<boolean | null>(null);
   const [pendingRepeat, setPendingRepeat] = useState<'off' | 'track' | 'context' | null>(null);
   const [loadingSection, setLoadingSection] = useState<typeof activeNav | null>(null);
@@ -229,8 +230,9 @@ function App() {
     try {
       const appWindow = getCurrentWindow();
       if (nextMode === 'lean') {
-        // Small min so ResizeObserver can snap height to actual content.
-        await appWindow.setMinSize(new LogicalSize(520, 80));
+        // Collapsed mode has a defined default size, but user resizing should be
+        // handled by responsive layout instead of content-driven window growth.
+        await appWindow.setMinSize(new LogicalSize(MIN_SIZE.width, MIN_SIZE.height));
         await appWindow.setSize(new LogicalSize(LEAN_SIZE.width, LEAN_SIZE.height));
       } else {
         const size = nextMode === 'login' ? LOGIN_SIZE : EXPANDED_SIZE;
@@ -959,68 +961,10 @@ function App() {
 
   useEffect(() => {
     const nextMode = !authReady || (!tokens && !MOCK_MODE) ? 'login' : mode;
+    if (windowModeRef.current === nextMode) return;
+    windowModeRef.current = nextMode;
     void resizeForMode(nextMode);
   }, [authReady, tokens, mode]);
-
-  // In lean mode, keep the window height locked to actual content height so
-  // the window never clips or wastes space regardless of status log activity
-  // or responsive breakpoint changes from the user resizing the width.
-  useEffect(() => {
-    if (mode !== 'lean' || !isTauri()) return;
-
-    const shell = document.querySelector<HTMLElement>('.app-shell');
-    if (!shell) return;
-
-    let rafId: number | null = null;
-
-    const syncHeight = async () => {
-      rafId = null;
-      const contentH = Math.ceil(Math.max(
-        shell.getBoundingClientRect().height,
-        shell.scrollHeight,
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight,
-      ));
-      if (contentH < 50) return;
-      // Use window.innerWidth (content-area width, always valid in WKWebView).
-      // window.outerWidth can return 0 before the window is fully initialized.
-      const logicalW = window.innerWidth;
-      if (logicalW < 100) return;
-      // Skip if height already matches — prevents feedback loop when setSize
-      // fires a resize event that calls us again.
-      if (Math.abs(window.innerHeight - contentH) < 2) return;
-      try {
-        const appWindow = getCurrentWindow();
-        await appWindow.setSize(new LogicalSize(logicalW, contentH));
-      } catch { /* browser mode */ }
-    };
-
-    const handleResize = () => {
-      // Cancel any pending rAF so we always use the latest dimensions.
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => void syncHeight());
-    };
-
-    const observer = new ResizeObserver(handleResize);
-    observer.observe(shell);
-    Array.from(shell.children).forEach((child) => {
-      observer.observe(child);
-    });
-    const mutationObserver = new MutationObserver(handleResize);
-    mutationObserver.observe(shell, { childList: true, subtree: true });
-    // Also listen for window resize so we snap height back when:
-    // (a) resizeForMode's setSize races and overrides the correct height, or
-    // (b) the user manually drags the window shorter than content.
-    window.addEventListener('resize', handleResize);
-    handleResize();
-
-    return () => {
-      observer.disconnect();
-      mutationObserver.disconnect();
-      window.removeEventListener('resize', handleResize);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [mode]);
 
   useEffect(() => {
     if (pendingShuffle === null) {
