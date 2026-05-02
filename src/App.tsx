@@ -501,7 +501,10 @@ function App() {
       // Immediately fetch playback state so LeanBar shows the current track.
       void refreshPlayback();
       // Trigger the active nav's data load (the [activeNav] effect fired while apiRef was null).
-      void loadSectionForNav(useAppStore.getState().activeNav);
+      const initialNav = useAppStore.getState().activeNav;
+      if (initialNav !== 'Now Playing') {
+        void loadSectionForNav(initialNav);
+      }
       // Auto-connect Web Playback SDK so lowspot is always the audio device.
       void handleConnectPlaybackSdk();
     } finally {
@@ -843,7 +846,7 @@ function App() {
       const message = loaded === null
         ? cached.length > 0
           ? `Showing ${cached.length} cached liked songs. Spotify refresh paused; check the status message for cooldown details.`
-          : 'Liked Songs request failed. Check the status message above for Spotify details, then retry after the cooldown.'
+          : 'No local liked songs cache exists for this installed app yet, and Spotify rate-limited the first library page. Wait for the cooldown, then try again once.'
         : loaded.loaded === 0
           ? 'Spotify returned 0 liked songs for this account/token.'
           : loaded.fromCache
@@ -940,7 +943,7 @@ function App() {
       const message = loaded === null
         ? cached.length > 0
           ? `Showing ${cached.length} cached liked albums. Spotify refresh paused; check the status message for cooldown details.`
-          : 'Liked Albums request failed. Check the status message above for Spotify details.'
+          : 'No local liked albums cache exists for this installed app yet, and Spotify rate-limited the first library page. Wait for the cooldown, then try again once.'
         : loaded.loaded === 0
           ? 'Spotify returned 0 liked albums for this account/token.'
           : loaded.fromCache

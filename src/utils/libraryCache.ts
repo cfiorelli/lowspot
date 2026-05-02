@@ -1,3 +1,4 @@
+import { Store } from '@tauri-apps/plugin-store';
 import type { SpotifyAlbum, SpotifyArtist, SpotifyPlaylist, SpotifyTrack } from '../spotify/types';
 
 export interface CachedLikedSong {
@@ -10,7 +11,7 @@ export interface CachedLikedAlbum {
   album: SpotifyAlbum;
 }
 
-type CacheBackend = 'indexedDB' | 'localStorage';
+type CacheBackend = 'tauriStore' | 'indexedDB' | 'localStorage';
 
 export interface CacheWriteResult {
   ok: boolean;
@@ -51,6 +52,7 @@ interface StoredAlbum {
 const DB_NAME = 'lowspot-library-cache';
 const DB_VERSION = 1;
 const DB_STORE = 'snapshots';
+const STORE_FILE = 'lowspot_library_cache.json';
 
 const KEYS = {
   likedSongs: 'lowspot:cache:liked-songs-v2',
@@ -65,6 +67,7 @@ const META_KEYS: Record<CacheKind, string> = {
 };
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
+let storePromise: Promise<Store | null> | null = null;
 
 const storageError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -72,6 +75,17 @@ const storageError = (error: unknown): string =>
 const canUseLocalStorage = (): boolean => typeof localStorage !== 'undefined';
 
 const canUseIndexedDb = (): boolean => typeof indexedDB !== 'undefined';
+
+const getTauriStore = async (): Promise<Store | null> => {
+  if (storePromise) return storePromise;
+
+  storePromise = Store.load(STORE_FILE).catch((error) => {
+    console.warn('[cache] Tauri Store unavailable:', storageError(error));
+    return null;
+  });
+
+  return storePromise;
+};
 
 const openCacheDb = (): Promise<IDBDatabase | null> => {
   if (!canUseIndexedDb()) return Promise.resolve(null);
@@ -149,6 +163,29 @@ async function writeIndexedDb<T>(key: string, data: T): Promise<void> {
   });
 }
 
+async function readTauriStore<T>(key: string): Promise<IndexedDbRead<T>> {
+  const store = await getTauriStore();
+  if (!store) return { found: false };
+
+  try {
+    const value = await store.get<T>(key);
+    return value === undefined || value === null
+      ? { found: false }
+      : { found: true, value };
+  } catch (error) {
+    console.warn('[cache] Tauri Store read failed for', key, '-', storageError(error));
+    return { found: false };
+  }
+}
+
+async function writeTauriStore<T>(key: string, data: T): Promise<void> {
+  const store = await getTauriStore();
+  if (!store) throw new Error('Tauri Store unavailable');
+
+  await store.set(key, data);
+  await store.save();
+}
+
 function readLocalStorage<T>(key: string): T | null {
   if (!canUseLocalStorage()) return null;
 
@@ -184,8 +221,17 @@ function removeLocalStorage(key: string): void {
 }
 
 async function loadRaw<T>(key: string): Promise<T | null> {
+  const stored = await readTauriStore<T>(key);
+  if (stored.found) return stored.value ?? null;
+
   const indexed = await readIndexedDb<T>(key);
-  if (indexed.found) return indexed.value ?? null;
+  if (indexed.found) {
+    const value = indexed.value ?? null;
+    if (value !== null) {
+      await saveRaw(key, value);
+    }
+    return value;
+  }
 
   const local = readLocalStorage<T>(key);
   if (!local) return null;
@@ -199,6 +245,14 @@ async function loadRaw<T>(key: string): Promise<T | null> {
 }
 
 async function saveRaw<T>(key: string, data: T): Promise<CacheWriteResult> {
+  try {
+    await writeTauriStore(key, data);
+    removeLocalStorage(key);
+    return { ok: true, backend: 'tauriStore' };
+  } catch (storeError) {
+    console.warn('[cache] Tauri Store write failed for', key, '-', storageError(storeError));
+  }
+
   try {
     await writeIndexedDb(key, data);
     removeLocalStorage(key);
