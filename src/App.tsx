@@ -975,7 +975,12 @@ function App() {
 
     const syncHeight = async () => {
       rafId = null;
-      const contentH = Math.ceil(shell.getBoundingClientRect().height);
+      const contentH = Math.ceil(Math.max(
+        shell.getBoundingClientRect().height,
+        shell.scrollHeight,
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight,
+      ));
       if (contentH < 50) return;
       // Use window.innerWidth (content-area width, always valid in WKWebView).
       // window.outerWidth can return 0 before the window is fully initialized.
@@ -998,6 +1003,11 @@ function App() {
 
     const observer = new ResizeObserver(handleResize);
     observer.observe(shell);
+    Array.from(shell.children).forEach((child) => {
+      observer.observe(child);
+    });
+    const mutationObserver = new MutationObserver(handleResize);
+    mutationObserver.observe(shell, { childList: true, subtree: true });
     // Also listen for window resize so we snap height back when:
     // (a) resizeForMode's setSize races and overrides the correct height, or
     // (b) the user manually drags the window shorter than content.
@@ -1006,6 +1016,7 @@ function App() {
 
     return () => {
       observer.disconnect();
+      mutationObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
