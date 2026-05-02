@@ -962,35 +962,44 @@ function App() {
     const shell = document.querySelector<HTMLElement>('.app-shell');
     if (!shell) return;
 
-    let scheduled = false;
+    let rafId: number | null = null;
 
     const syncHeight = async () => {
-      scheduled = false;
+      rafId = null;
       const contentH = Math.ceil(shell.getBoundingClientRect().height);
       if (contentH < 50) return;
       // Use window.innerWidth (content-area width, always valid in WKWebView).
-      // window.outerWidth can return 0 before the window is fully initialized
-      // which would make setSize(0, h) hide the window entirely.
+      // window.outerWidth can return 0 before the window is fully initialized.
       const logicalW = window.innerWidth;
       if (logicalW < 100) return;
+      // Skip if height already matches — prevents feedback loop when setSize
+      // fires a resize event that calls us again.
+      if (Math.abs(window.innerHeight - contentH) < 2) return;
       try {
         const appWindow = getCurrentWindow();
-        // Tauri's setSize takes inner (content-area) dimensions on macOS.
         await appWindow.setSize(new LogicalSize(logicalW, contentH));
       } catch { /* browser mode */ }
     };
 
     const handleResize = () => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => void syncHeight());
+      // Cancel any pending rAF so we always use the latest dimensions.
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => void syncHeight());
     };
 
     const observer = new ResizeObserver(handleResize);
     observer.observe(shell);
+    // Also listen for window resize so we snap height back when:
+    // (a) resizeForMode's setSize races and overrides the correct height, or
+    // (b) the user manually drags the window shorter than content.
+    window.addEventListener('resize', handleResize);
     handleResize();
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', handleResize);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [mode]);
 
   useEffect(() => {
