@@ -461,6 +461,8 @@ function App() {
       void refreshPlayback();
       // Trigger the active nav's data load (the [activeNav] effect fired while apiRef was null).
       void loadSectionForNav(useAppStore.getState().activeNav);
+      // Auto-connect Web Playback SDK so lowspot is always the audio device.
+      void handleConnectPlaybackSdk();
     } finally {
       setupInProgressRef.current = false;
     }
