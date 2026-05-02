@@ -19,8 +19,10 @@ export function StatusStrip({ errorMessage, infoMessage, statusLog, onClearLog }
   const logRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!logRef.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
+    const el = logRef.current;
+    if (!el) return;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    if (isAtBottom) el.scrollTop = el.scrollHeight;
   }, [statusLog]);
 
   return (
