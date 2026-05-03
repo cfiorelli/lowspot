@@ -62,6 +62,7 @@ const MOCK_MODE = import.meta.env.VITE_LOWSPOT_MOCK === '1';
 const LIBRARY_CACHE_REVALIDATE_MS = 30 * 60_000;
 const RECENTLY_PLAYED_REVALIDATE_MS = 2 * 60_000;
 const SEARCH_CACHE_REVALIDATE_MS = 10 * 60_000;
+const MAX_PLAYBACK_URI_WINDOW = 50;
 
 const countSearchResults = (results: ReturnType<typeof mockSearch>): number =>
   (results.tracks?.items.length ?? 0) +
@@ -147,6 +148,8 @@ function App() {
   const [spotifyDiagnostics, setSpotifyDiagnostics] = useState<SpotifyDiagnosticEntry[]>([]);
   const [sdkConnecting, setSdkConnecting] = useState(false);
   const [sdkDeviceId, setSdkDeviceId] = useState<string | null>(null);
+  const [playbackControlMode, setPlaybackControlMode] = useState<'passenger' | 'driving'>('passenger');
+  const isPlaybackDriving = playbackControlMode === 'driving';
   const effectiveShuffle = pendingShuffle ?? Boolean(playback?.shuffle_state);
 
   const ensureCacheWrite = (label: string, result: CacheWriteResult) => {
@@ -324,6 +327,11 @@ function App() {
     command: (api: SpotifyApiClient) => Promise<void>,
     options?: { forcePlayOnTransfer?: boolean; ensurePlayingAfterCommand?: boolean },
   ): Promise<boolean> => {
+    if (!isPlaybackDriving && !MOCK_MODE) {
+      setInfoMessage('lowspot is not driving right now. Take control before using playback controls.');
+      return false;
+    }
+
     const api = apiRef.current;
     if (!api) {
       return false;
@@ -552,8 +560,6 @@ function App() {
       if (initialNav !== 'Now Playing') {
         void loadSectionForNav(initialNav);
       }
-      // Auto-connect Web Playback SDK so lowspot is always the audio device.
-      void handleConnectPlaybackSdk();
     } finally {
       setupInProgressRef.current = false;
     }
@@ -583,6 +589,7 @@ function App() {
       sectionLoadPendingRef.current = false;
       setErrorMessage('');
       setInfoMessage('Mock Spotify mode active. No Spotify API calls will be made.');
+      setPlaybackControlMode('passenger');
       return;
     }
 
@@ -602,16 +609,22 @@ function App() {
     setLoadingSection(null);
     setSectionMessage('');
     sectionLoadPendingRef.current = false;
+    setPlaybackControlMode('passenger');
     setErrorMessage('');
     setInfoMessage('Logged out.');
   };
 
-  const handleConnectPlaybackSdk = async () => {
+  const handleConnectPlaybackSdk = async (force = false) => {
     if (MOCK_MODE) {
       setSdkMessage('Mock playback device connected.');
       setInfoMessage('Mock playback device connected.');
       setSdkDeviceId('mock-device');
       sdkDeviceIdRef.current = 'mock-device';
+      return;
+    }
+
+    if (!force && !isPlaybackDriving) {
+      setInfoMessage('lowspot is not driving right now. Take control before connecting the local device.');
       return;
     }
 
@@ -655,6 +668,28 @@ function App() {
     } finally {
       setSdkConnecting(false);
     }
+  };
+
+  const handleTakePlaybackControl = async () => {
+    setPlaybackControlMode('driving');
+    setInfoMessage('lowspot is driving.');
+
+    if (MOCK_MODE) {
+      setSdkMessage('Mock playback device connected.');
+      setSdkDeviceId('mock-device');
+      sdkDeviceIdRef.current = 'mock-device';
+      return;
+    }
+
+    await handleConnectPlaybackSdk(true);
+    await refreshPlayback();
+  };
+
+  const handleReleasePlaybackControl = () => {
+    setPlaybackControlMode('passenger');
+    setPendingShuffle(null);
+    setPendingRepeat(null);
+    setInfoMessage('lowspot is not driving right now.');
   };
 
   const handlePlayPause = async () => {
@@ -1176,6 +1211,22 @@ function App() {
     }
   };
 
+  const isContextRowType = (type: string): boolean =>
+    type === 'Album' || type === 'Artist' || type === 'Playlist' || type.startsWith('Playlist (');
+
+  const getTrackPlaybackUris = (startIndex: number, fallbackUri: string): string[] => {
+    if (activeNav !== 'Liked Songs') {
+      return [fallbackUri];
+    }
+
+    const uris = tableRows
+      .slice(startIndex, startIndex + MAX_PLAYBACK_URI_WINDOW)
+      .filter((row) => row.type === 'Track' && row.uri)
+      .map((row) => row.uri as string);
+
+    return uris.length > 0 ? uris : [fallbackUri];
+  };
+
   const playSelectedRow = async (index: number) => {
     const row = tableRows[index];
     const uri = row?.uri;
@@ -1195,9 +1246,11 @@ function App() {
 
     const ok = await runPlaybackCommand('play-row', async (api) => {
       if (row.type === 'Track') {
-        await api.play(sdkDeviceIdRef.current ?? undefined, [uri]);
-      } else {
+        await api.play(sdkDeviceIdRef.current ?? undefined, getTrackPlaybackUris(index, uri));
+      } else if (isContextRowType(row.type)) {
         await api.play(sdkDeviceIdRef.current ?? undefined, undefined, uri);
+      } else {
+        await api.play(sdkDeviceIdRef.current ?? undefined, [uri]);
       }
     });
 
@@ -1260,6 +1313,10 @@ function App() {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const getNextPlaybackPollDelay = () => {
+      if (!isPlaybackDriving) {
+        return PAUSED_PLAYBACK_POLL_INTERVAL_MS;
+      }
+
       const currentPlayback = useAppStore.getState().playback;
 
       if (document.hidden) {
@@ -1284,7 +1341,9 @@ function App() {
     const runPoll = async () => {
       if (cancelled) return;
       await ensureFreshToken();
-      await refreshPlayback();
+      if (isPlaybackDriving) {
+        await refreshPlayback();
+      }
       if (!cancelled) {
         scheduleNextPoll();
       }
@@ -1293,7 +1352,14 @@ function App() {
     const wakeOnVisible = () => {
       if (document.hidden) return;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(runPoll, 0);
+      timer = setTimeout(async () => {
+        if (cancelled) return;
+        await ensureFreshToken();
+        await refreshPlayback();
+        if (!cancelled) {
+          scheduleNextPoll();
+        }
+      }, 0);
     };
 
     scheduleNextPoll();
@@ -1304,7 +1370,7 @@ function App() {
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', wakeOnVisible);
     };
-  }, [tokens]);
+  }, [tokens, isPlaybackDriving]);
 
   useEffect(() => {
     const refreshCooldownSummary = () => {
@@ -1436,9 +1502,9 @@ function App() {
   }
 
   const canPlayVisibleSelection = mode === 'expanded' && activeNav !== 'Now Playing' && tableRows.length > 0;
-  const playbackControlsDisabled = !(playback?.item || canPlayVisibleSelection);
+  const playbackControlsDisabled = !isPlaybackDriving || !(playback?.item || canPlayVisibleSelection);
   const playbackEndpointCooldown = getSpotifyCooldown('/me/player');
-  const playbackSettingsDisabled = !playback?.device?.id || Boolean(playbackEndpointCooldown);
+  const playbackSettingsDisabled = !isPlaybackDriving || !playback?.device?.id || Boolean(playbackEndpointCooldown);
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
 
   return (
@@ -1465,6 +1531,8 @@ function App() {
           playback={playback}
           currentTrackLiked={currentTrackLiked}
           controlsDisabled={playbackControlsDisabled}
+          playbackControlActive={isPlaybackDriving}
+          playbackControlPending={sdkConnecting}
           onPrevious={() => {
             if (MOCK_MODE) {
               stepMockPlayback(-1);
@@ -1489,6 +1557,10 @@ function App() {
           onToggleLike={() => {
             void handleToggleLike();
           }}
+          onTakePlaybackControl={() => {
+            void handleTakePlaybackControl();
+          }}
+          onReleasePlaybackControl={handleReleasePlaybackControl}
           onExpand={() => {
             setMode('expanded');
             void resizeForMode('expanded');
@@ -1510,6 +1582,8 @@ function App() {
           playback={playback}
           controlsDisabled={playbackControlsDisabled}
           playbackSettingsDisabled={playbackSettingsDisabled}
+          playbackControlActive={isPlaybackDriving}
+          playbackControlPending={sdkConnecting}
           shuffleState={effectiveShuffle}
           repeatState={effectiveRepeat}
           shufflePending={pendingShuffle !== null}
@@ -1544,7 +1618,7 @@ function App() {
             void handleSearch(query);
           }}
           onRowSelect={setSelectedRow}
-          onPlayTrack={(trackUri) => {
+          onPlayTrack={(trackUri, index) => {
             if (MOCK_MODE) {
               playMockTrack(trackUri);
               if (activeNav === 'Search') {
@@ -1556,7 +1630,7 @@ function App() {
 
             void (async () => {
               const ok = await runPlaybackCommand('play-track', async (api) => {
-                await api.play(sdkDeviceIdRef.current ?? undefined, [trackUri]);
+                await api.play(sdkDeviceIdRef.current ?? undefined, getTrackPlaybackUris(index, trackUri));
               }, { forcePlayOnTransfer: true });
 
               if (ok && activeNav === 'Search') {
@@ -1607,6 +1681,10 @@ function App() {
               await api.next();
             }, { forcePlayOnTransfer: true, ensurePlayingAfterCommand: true });
           }}
+          onTakePlaybackControl={() => {
+            void handleTakePlaybackControl();
+          }}
+          onReleasePlaybackControl={handleReleasePlaybackControl}
           onToggleShuffle={() => {
             if (pendingShuffle !== null) {
               return;

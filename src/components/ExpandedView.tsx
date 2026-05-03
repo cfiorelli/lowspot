@@ -18,6 +18,8 @@ interface ExpandedViewProps {
   playback: PlaybackState | null;
   controlsDisabled: boolean;
   playbackSettingsDisabled: boolean;
+  playbackControlActive: boolean;
+  playbackControlPending: boolean;
   shuffleState: boolean;
   repeatState: 'off' | 'track' | 'context';
   shufflePending: boolean;
@@ -36,11 +38,13 @@ interface ExpandedViewProps {
   onSyncLibraryPage: () => void;
   onSearch: (query: string) => void;
   onRowSelect: (index: number) => void;
-  onPlayTrack: (trackUri: string) => void;
+  onPlayTrack: (trackUri: string, index: number) => void;
   onPlayContext: (contextUri: string) => void;
   onPrevious: () => void;
   onPlayPause: () => void;
   onNext: () => void;
+  onTakePlaybackControl: () => void;
+  onReleasePlaybackControl: () => void;
   onToggleShuffle: () => void;
   onCycleRepeat: () => void;
   onSetVolume: (volumePercent: number) => void;
@@ -70,6 +74,18 @@ const formatDiagnosticStatus = (entry: SpotifyDiagnosticEntry): string => {
   return entry.error ? `network error ${entry.error}` : 'network error';
 };
 
+const canPlayRowType = (type: string): boolean =>
+  type === 'Track' ||
+  type === 'Album' ||
+  type === 'Playlist' ||
+  type.startsWith('Playlist (') ||
+  type === 'Artist' ||
+  type === 'Queued Track' ||
+  type === 'Recent';
+
+const isContextRowType = (type: string): boolean =>
+  type === 'Album' || type === 'Artist' || type === 'Playlist' || type.startsWith('Playlist (');
+
 export function ExpandedView({
   activeNav,
   selectedRow,
@@ -82,6 +98,8 @@ export function ExpandedView({
   playback,
   controlsDisabled,
   playbackSettingsDisabled,
+  playbackControlActive,
+  playbackControlPending,
   shuffleState,
   repeatState,
   shufflePending,
@@ -105,6 +123,8 @@ export function ExpandedView({
   onPrevious,
   onPlayPause,
   onNext,
+  onTakePlaybackControl,
+  onReleasePlaybackControl,
   onToggleShuffle,
   onCycleRepeat,
   onSetVolume,
@@ -156,12 +176,23 @@ export function ExpandedView({
                 {sectionLoading ? 'Syncing...' : 'Sync 50'}
               </button>
             ) : null}
+            <span className={`drive-state ${playbackControlActive ? 'active' : ''}`}>
+              {playbackControlActive ? 'lowspot is driving' : 'not driving'}
+            </span>
           </div>
           <div className="playback-controls">
+            <button
+              type="button"
+              className={`drive-toggle ${playbackControlActive ? 'active' : ''}`}
+              onClick={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
+              disabled={playbackControlPending}
+            >
+              {playbackControlActive ? 'Stop Driving' : 'Take Control'}
+            </button>
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">
               {'<<'}
             </button>
-            <button type="button" className="play-toggle" onClick={onPlayPause} disabled={controlsDisabled && rows.length === 0} aria-label="Play or pause">
+            <button type="button" className="play-toggle" onClick={onPlayPause} disabled={controlsDisabled} aria-label="Play or pause">
               {playback?.is_playing ? 'Pause' : 'Play'}
             </button>
             <button type="button" className="transport-button" onClick={onNext} disabled={controlsDisabled} aria-label="Next">
@@ -259,9 +290,15 @@ export function ExpandedView({
                 ))}
               </div>
               <p>Local playback device:</p>
-              <p className="mono">{sdkDeviceId ? `Connected: ${sdkDeviceId}` : sdkMessage}</p>
-              <button type="button" onClick={onConnectPlaybackSdk} disabled={sdkConnecting}>
-                {sdkConnecting ? 'Connecting...' : 'Connect Local Device'}
+              <p className="mono">
+                {playbackControlActive
+                  ? sdkDeviceId
+                    ? `Connected: ${sdkDeviceId}`
+                    : sdkMessage
+                  : 'lowspot is not driving right now.'}
+              </p>
+              <button type="button" onClick={onConnectPlaybackSdk} disabled={!playbackControlActive || sdkConnecting}>
+                {sdkConnecting ? 'Connecting...' : 'Reconnect Local Device'}
               </button>
             </div>
           ) : null}
@@ -280,24 +317,24 @@ export function ExpandedView({
                 type="button"
                 className={`row ${index === selectedRow ? 'selected' : ''}`}
                 onClick={() => {
-                  const canPlay = row.type === 'Track' || row.type === 'Album' || row.type === 'Playlist' || row.type === 'Artist';
+                  const canPlay = canPlayRowType(row.type);
                   if (activeNav === 'Search' && row.uri && canPlay) {
-                    if (row.type === 'Track') {
-                      onPlayTrack(row.uri);
-                    } else {
+                    if (isContextRowType(row.type)) {
                       onPlayContext(row.uri);
+                    } else {
+                      onPlayTrack(row.uri, index);
                     }
                     return;
                   }
                   onRowSelect(index);
                 }}
                 onDoubleClick={() => {
-                  const canPlay = row.type === 'Track' || row.type === 'Album' || row.type === 'Playlist' || row.type === 'Artist';
+                  const canPlay = canPlayRowType(row.type);
                   if (!row.uri || !canPlay) return;
-                  if (row.type === 'Track') {
-                    onPlayTrack(row.uri);
-                  } else {
+                  if (isContextRowType(row.type)) {
                     onPlayContext(row.uri);
+                  } else {
+                    onPlayTrack(row.uri, index);
                   }
                 }}
               >

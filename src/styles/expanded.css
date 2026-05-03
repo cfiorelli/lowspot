@@ -76,6 +76,10 @@
   gap: 8px;
 }
 
+.content-title-group .drive-state {
+  max-width: 170px;
+}
+
 .sync-page-button {
   min-width: 74px;
 }
@@ -103,6 +107,15 @@
 
 .playback-controls .play-toggle {
   min-width: 62px;
+}
+
+.playback-controls .drive-toggle {
+  min-width: 108px;
+}
+
+.playback-controls .drive-toggle.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
 }
 
 .playback-controls .shuffle-toggle {

@@ -5,10 +5,14 @@ interface LeanBarProps {
   playback: PlaybackState | null;
   currentTrackLiked: boolean;
   controlsDisabled: boolean;
+  playbackControlActive: boolean;
+  playbackControlPending: boolean;
   onPrevious: () => void;
   onPlayPause: () => void;
   onNext: () => void;
   onToggleLike: () => void;
+  onTakePlaybackControl: () => void;
+  onReleasePlaybackControl: () => void;
   onExpand: () => void;
   onSearchSubmit: (query: string) => void;
 }
@@ -17,10 +21,14 @@ export function LeanBar({
   playback,
   currentTrackLiked,
   controlsDisabled,
+  playbackControlActive,
+  playbackControlPending,
   onPrevious,
   onPlayPause,
   onNext,
   onToggleLike,
+  onTakePlaybackControl,
+  onReleasePlaybackControl,
   onExpand,
   onSearchSubmit,
 }: LeanBarProps) {
@@ -38,6 +46,14 @@ export function LeanBar({
         <button type="button" className="expand-button" onClick={onExpand} aria-label="Expand view">
           Expand
         </button>
+        <button
+          type="button"
+          className={`drive-toggle ${playbackControlActive ? 'active' : ''}`}
+          onClick={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
+          disabled={playbackControlPending}
+        >
+          {playbackControlActive ? 'Stop Driving' : 'Take Control'}
+        </button>
         <button type="button" className="transport-button" onClick={onPrevious} aria-label="Previous" disabled={controlsDisabled}>
           {'<<'}
         </button>
@@ -53,6 +69,9 @@ export function LeanBar({
       </div>
 
       <div className="now-playing">
+        <p className={`drive-state ${playbackControlActive ? 'active' : ''}`}>
+          {playbackControlActive ? 'lowspot is driving' : 'lowspot is not driving right now'}
+        </p>
         {playback?.item ? (
           <>
             <p className="track">{playback.item.name}</p>
