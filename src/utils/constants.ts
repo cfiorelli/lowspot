@@ -21,6 +21,8 @@ export const REQUIRED_SCOPES = [
 // in a rolling 30 second window, and development-mode apps have lower quota.
 // Do NOT lower without adjusting RATE_LIMIT_BUDGET.
 export const POLL_INTERVAL_MS = 15_000;
+export const PAUSED_PLAYBACK_POLL_INTERVAL_MS = 60_000;
+export const IDLE_PLAYBACK_POLL_INTERVAL_MS = 120_000;
 
 // Delay between library-sync page fetches. 1000ms is deliberately slower than
 // the theoretical limit so playback, search, and UI probes still have room.

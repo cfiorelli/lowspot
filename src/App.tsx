@@ -22,7 +22,16 @@ import {
   mockSearch,
 } from './spotify/mockData';
 import { useAppStore } from './state/store';
-import { EXPANDED_SIZE, LEAN_SIZE, LIBRARY_PAGE_DELAY_MS, LOGIN_SIZE, MIN_SIZE, POLL_INTERVAL_MS } from './utils/constants';
+import {
+  EXPANDED_SIZE,
+  IDLE_PLAYBACK_POLL_INTERVAL_MS,
+  LEAN_SIZE,
+  LIBRARY_PAGE_DELAY_MS,
+  LOGIN_SIZE,
+  MIN_SIZE,
+  PAUSED_PLAYBACK_POLL_INTERVAL_MS,
+  POLL_INTERVAL_MS,
+} from './utils/constants';
 import type { NavItem } from './utils/constants';
 import {
   loadCachedLikedSongs, saveCachedLikedSongs,
@@ -122,6 +131,7 @@ function App() {
   const setupInProgressRef = useRef(false);
   const refreshRef = useRef(false);
   const refreshPlaybackPendingRef = useRef(false);
+  const emptyPlaybackPollsRef = useRef(0);
   const sectionLoadPendingRef = useRef(false);
   const sdkDeviceIdRef = useRef<string | null>(null);
   const sdkDisconnectRef = useRef<(() => void) | null>(null);
@@ -416,6 +426,7 @@ function App() {
         const queueState = queuePollDue ? await api.getQueue().catch(() => null) : null;
 
         if (playbackState) {
+          emptyPlaybackPollsRef.current = 0;
           setPlayback(playbackState);
           const newTrackId = playbackState.item?.id;
 
@@ -437,6 +448,8 @@ function App() {
               }
             }
           }
+        } else {
+          emptyPlaybackPollsRef.current += 1;
         }
 
         if (queueState) {
@@ -1243,12 +1256,54 @@ function App() {
   useEffect(() => {
     if (MOCK_MODE || !tokens) return;
 
-    const timer = setInterval(() => {
-      void ensureFreshToken();
-      void refreshPlayback();
-    }, POLL_INTERVAL_MS);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    return () => clearInterval(timer);
+    const getNextPlaybackPollDelay = () => {
+      const currentPlayback = useAppStore.getState().playback;
+
+      if (document.hidden) {
+        return IDLE_PLAYBACK_POLL_INTERVAL_MS;
+      }
+
+      if (!currentPlayback?.item && emptyPlaybackPollsRef.current > 0) {
+        return IDLE_PLAYBACK_POLL_INTERVAL_MS;
+      }
+
+      if (currentPlayback && !currentPlayback.is_playing) {
+        return PAUSED_PLAYBACK_POLL_INTERVAL_MS;
+      }
+
+      return POLL_INTERVAL_MS;
+    };
+
+    const scheduleNextPoll = () => {
+      timer = setTimeout(runPoll, getNextPlaybackPollDelay());
+    };
+
+    const runPoll = async () => {
+      if (cancelled) return;
+      await ensureFreshToken();
+      await refreshPlayback();
+      if (!cancelled) {
+        scheduleNextPoll();
+      }
+    };
+
+    const wakeOnVisible = () => {
+      if (document.hidden) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(runPoll, 0);
+    };
+
+    scheduleNextPoll();
+    document.addEventListener('visibilitychange', wakeOnVisible);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wakeOnVisible);
+    };
   }, [tokens]);
 
   useEffect(() => {
