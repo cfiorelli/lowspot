@@ -305,6 +305,9 @@ function App() {
   const shouldRetryPlaybackError = (message: string): boolean =>
     /string did not match the expected pattern|\b502\b|bad gateway|no active device/i.test(message);
 
+  const isTrackStepOperation = (operation: string): boolean =>
+    operation === 'next' || operation === 'previous';
+
   const guardPlaybackEndpointCooldown = (context = 'playback-control'): boolean => {
     const cooldown = getSpotifyCooldown('/me/player');
     if (!cooldown) return false;
@@ -325,7 +328,7 @@ function App() {
   const runPlaybackCommand = async (
     operation: string,
     command: (api: SpotifyApiClient) => Promise<void>,
-    options?: { forcePlayOnTransfer?: boolean; ensurePlayingAfterCommand?: boolean },
+    options?: { forcePlayOnTransfer?: boolean },
   ): Promise<boolean> => {
     if (!isPlaybackDriving && !MOCK_MODE) {
       setInfoMessage('lowspot is not driving right now. Take control before using playback controls.');
@@ -372,13 +375,10 @@ function App() {
       }
 
       await command(api);
-
-      if (options?.ensurePlayingAfterCommand) {
-        await api.play(targetDeviceId ?? undefined);
-      }
     });
 
     setErrorMessage('');
+    const originalTrackId = useAppStore.getState().playback?.item?.id ?? null;
 
     try {
       await runOnce();
@@ -397,6 +397,15 @@ function App() {
       if (/Restriction violated/i.test(firstMessage)) {
         await refreshPlayback();
         return true;
+      }
+
+      if (isTrackStepOperation(operation)) {
+        await refreshPlayback();
+        const verifiedTrackId = useAppStore.getState().playback?.item?.id ?? null;
+        if (verifiedTrackId && verifiedTrackId !== originalTrackId) {
+          setErrorMessage('');
+          return true;
+        }
       }
 
       if (shouldRetryPlaybackError(firstMessage)) {
@@ -1540,7 +1549,7 @@ function App() {
             }
             void runPlaybackCommand('previous', async (api) => {
               await api.previous();
-            }, { forcePlayOnTransfer: true, ensurePlayingAfterCommand: true });
+            }, { forcePlayOnTransfer: true });
           }}
           onPlayPause={() => {
             void handlePlayPause();
@@ -1552,7 +1561,7 @@ function App() {
             }
             void runPlaybackCommand('next', async (api) => {
               await api.next();
-            }, { forcePlayOnTransfer: true, ensurePlayingAfterCommand: true });
+            }, { forcePlayOnTransfer: true });
           }}
           onToggleLike={() => {
             void handleToggleLike();
@@ -1667,7 +1676,7 @@ function App() {
             }
             void runPlaybackCommand('previous', async (api) => {
               await api.previous();
-            }, { forcePlayOnTransfer: true, ensurePlayingAfterCommand: true });
+            }, { forcePlayOnTransfer: true });
           }}
           onPlayPause={() => {
             void handlePlayPause();
@@ -1679,7 +1688,7 @@ function App() {
             }
             void runPlaybackCommand('next', async (api) => {
               await api.next();
-            }, { forcePlayOnTransfer: true, ensurePlayingAfterCommand: true });
+            }, { forcePlayOnTransfer: true });
           }}
           onTakePlaybackControl={() => {
             void handleTakePlaybackControl();
