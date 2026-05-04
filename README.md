@@ -52,8 +52,10 @@ npm run dev
 ### Step 5: Log in and play
 
 - Click **Log in with Spotify** and approve the permissions.
-- lowspot connects as a Spotify Connect device after login.
-- Press **Expand** or `Cmd+B` to browse your library, search, queue, and settings.
+- The app opens in the compact collapsed view.
+- Click **lowspot off** to switch to **lowspot on** when you want lowspot to drive Spotify playback.
+- Search from the box and press Enter, or click **Expand** to browse library views.
+- Liked Songs and Liked Albums show cached data immediately. Partial caches fill gently in the background.
 
 ---
 
@@ -94,6 +96,7 @@ DMG users do not need `.env`. The Client ID is baked into the build.
 ```bash
 npm run tauri:dev          # Live desktop with real Spotify
 npm run tauri:dev:mock     # Desktop with fixture data (no API calls)
+npm run dev:mock           # Browser preview with fixture data
 npm run dev                # Browser-only preview
 npm run build              # Production web build
 npm run tauri:build        # Production desktop bundle
@@ -101,14 +104,29 @@ npm run tauri:build        # Production desktop bundle
 
 Mock mode is useful for UI work. It bypasses auth and serves local fixtures for playback, search, liked songs, albums, playlists, queue, and recently played.
 
-## Token Storage
+## Local Data
 
 Tauri desktop stores tokens at:
 ```
 ~/Library/Application Support/com.cfiorelli.lowspot/lowspot_tokens.json
 ```
 
+The durable library cache is stored next to it:
+```
+~/Library/Application Support/com.cfiorelli.lowspot/lowspot_library_cache.json
+```
+
 To force a fresh login: `rm -f "$HOME/Library/Application Support/com.cfiorelli.lowspot/lowspot_tokens.json"`
+
+## Client ID Safety
+
+- `.env` is ignored by git and should hold your real Spotify Client ID.
+- `.env.example` is tracked and contains only placeholders.
+- DMG builds bake in the Client ID used at build time, but source users configure their own local `.env`.
+
+## Rate Limit Safety
+
+Spotify Web API calls are treated as scarce. lowspot prefers cached library data, uses conservative playback polling, records request diagnostics, and trickles large library cache fills instead of hydrating everything in one burst.
 
 ## Troubleshooting
 
@@ -117,7 +135,7 @@ To force a fresh login: `rm -f "$HOME/Library/Application Support/com.cfiorelli.
 | Missing Client ID | Confirm `.env` exists with `VITE_SPOTIFY_CLIENT_ID` set |
 | OAuth redirect error | Confirm `http://127.0.0.1:7878/callback` is in Spotify Dashboard |
 | 429 rate limit | Wait for the displayed cooldown, or switch to mock mode |
-| No active playback | Log in, let lowspot connect its local playback device, then check the status log if playback is still unavailable |
+| Playback buttons disabled | Click **lowspot off** so it becomes **lowspot on**, then choose music |
 | macOS blocks app | Right-click, then choose **Open** on first launch |
 
 ## Spotify Scopes
