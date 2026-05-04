@@ -352,10 +352,26 @@ function App() {
     return useAppStore.getState().playback;
   };
 
+  const verifyPlaybackPlayingState = async (expectedIsPlaying: boolean): Promise<boolean> => {
+    for (const delayMs of [0, 250, 750]) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      const verifiedPlayback = await refreshPlayback();
+      if (verifiedPlayback?.is_playing === expectedIsPlaying) {
+        setErrorMessage('');
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const runPlaybackCommand = async (
     operation: string,
     command: (api: SpotifyApiClient) => Promise<void>,
-    options?: { forcePlayOnTransfer?: boolean; settlePlayback?: boolean },
+    options?: { forcePlayOnTransfer?: boolean; settlePlayback?: boolean; expectedIsPlaying?: boolean },
   ): Promise<boolean> => {
     if (!isPlaybackDriving && !MOCK_MODE) {
       setInfoMessage('lowspot is not driving right now. Take control before using playback controls.');
@@ -435,6 +451,12 @@ function App() {
         }
       }
 
+      if (options?.expectedIsPlaying !== undefined) {
+        if (await verifyPlaybackPlayingState(options.expectedIsPlaying)) {
+          return true;
+        }
+      }
+
       if (shouldRetryPlaybackError(firstMessage)) {
         try {
           await refreshPlayback();
@@ -443,6 +465,12 @@ function App() {
           await refreshPlaybackAfterCommand(Boolean(options?.settlePlayback), originalTrackId);
           return true;
         } catch (retryError) {
+          if (options?.expectedIsPlaying !== undefined) {
+            if (await verifyPlaybackPlayingState(options.expectedIsPlaying)) {
+              return true;
+            }
+          }
+
           const retryMessage = retryError instanceof Error ? retryError.message : firstMessage;
           console.warn('[playback-command:retry-failed]', {
             operation,
@@ -793,6 +821,8 @@ function App() {
       } else {
         await api.play(sdkDeviceIdRef.current ?? undefined);
       }
+    }, {
+      expectedIsPlaying: !playback?.is_playing,
     });
 
     if (!ok) {
