@@ -1,20 +1,23 @@
 # lowspot
 
-Text-first, low-noise Spotify desktop client for macOS. Compact by design — a slim playback bar with search, library, and queue when you need them.
+Text-first, low-noise Spotify desktop client for macOS. A slim playback bar that stays out of your way.
 
 ---
 
-## Install from DMG (macOS)
+## Download & Install (macOS)
 
-If someone sent you a `.dmg` file:
+**[⬇ Download the latest release](https://github.com/cfiorelli/lowspot/releases/latest)**
 
-1. Open the DMG and drag **lowspot** into your Applications folder.
-2. On first launch macOS may block the app because it is unsigned. **Right-click lowspot → Open → Open** to allow it.
-3. Log in with the Spotify account your host has added to their Spotify Developer app.
-4. Approve the requested Spotify permissions.
-5. Click **lowspot off** in the bottom-left corner to switch it **on** — this connects lowspot as your Spotify playback device. Then hit Play or search for something.
+> Requires Spotify Premium and macOS 11 or later. Your Spotify account must be added to the app's allowlist before you log in — ask whoever shared this link with you to add you first.
 
-> **Requirements:** Spotify Premium account. macOS 11+.
+**Steps:**
+
+1. Click the download link above and download the `.dmg` file from the Assets section.
+2. Open the downloaded file. Drag **lowspot** into your Applications folder.
+3. Open **Applications**, find lowspot, and double-click it.
+4. macOS will warn you the app is from an unidentified developer. Click **Done**, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. On older macOS: right-click the app → **Open** → **Open**.
+5. Log in with your Spotify account and approve the permissions.
+6. Click **lowspot off** in the bottom-left to switch it **on** — this makes lowspot your Spotify playback device. Hit Play or search for a song to start.
 
 ---
 
