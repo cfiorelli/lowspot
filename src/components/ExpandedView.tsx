@@ -163,7 +163,7 @@ export function ExpandedView({
             <button type="button" className="collapse-inline" onClick={onCollapse}>
               Collapse
             </button>
-            <h3>{activeNav}</h3>
+            {activeNav === 'Search' ? null : <h3>{activeNav}</h3>}
           </div>
           <div className="playback-controls">
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">
@@ -220,7 +220,6 @@ export function ExpandedView({
             }}
           >
             <input id="global-search" name="search" type="search" placeholder="Search tracks, albums, playlists" />
-            <button type="submit">Search</button>
           </form>
         </header>
 
@@ -282,7 +281,6 @@ export function ExpandedView({
           <div className="table-head">
             <span>Title</span>
             <span>Meta</span>
-            <span>Type</span>
           </div>
           <div className="table-body">
             {rows.length === 0 ? (
@@ -317,7 +315,6 @@ export function ExpandedView({
               >
                 <span>{row.title}</span>
                 <span>{row.subtitle}</span>
-                <span>{row.type}</span>
               </button>
             ))}
           </div>
