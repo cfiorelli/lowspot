@@ -11,6 +11,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { buildRowsForNav } from './components/rows';
 import { StatusStrip } from './components/StatusStrip';
 import { getSpotifyRequestBudget, SpotifyApiClient, SpotifyRateLimitError } from './spotify/api';
+import type { PlaybackState } from './spotify/types';
 import { connectPlaybackSdk } from './spotify/webPlaybackSDK';
 import {
   mockLikedAlbums,
@@ -125,6 +126,7 @@ function App() {
   const setupInProgressRef = useRef(false);
   const refreshRef = useRef(false);
   const refreshPlaybackPendingRef = useRef(false);
+  const refreshPlaybackPromiseRef = useRef<Promise<PlaybackState | null> | null>(null);
   const emptyPlaybackPollsRef = useRef(0);
   const sectionLoadPendingRef = useRef(false);
   const gentleLibrarySyncCancelRef = useRef(false);
@@ -320,10 +322,40 @@ function App() {
     return true;
   };
 
+  const refreshPlaybackAfterCommand = async (
+    shouldSettle: boolean,
+    originalTrackId: string | null,
+  ): Promise<PlaybackState | null> => {
+    const firstRefresh = await refreshPlayback();
+
+    if (!shouldSettle) {
+      return firstRefresh;
+    }
+
+    const isSettled = (state: PlaybackState | null): boolean => {
+      const trackId = state?.item?.id ?? null;
+      return Boolean(state?.is_playing && trackId && (!originalTrackId || trackId !== originalTrackId));
+    };
+
+    if (isSettled(firstRefresh)) {
+      return firstRefresh;
+    }
+
+    for (const delayMs of [300, 800, 1600]) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      const nextRefresh = await refreshPlayback();
+      if (isSettled(nextRefresh)) {
+        return nextRefresh;
+      }
+    }
+
+    return useAppStore.getState().playback;
+  };
+
   const runPlaybackCommand = async (
     operation: string,
     command: (api: SpotifyApiClient) => Promise<void>,
-    options?: { forcePlayOnTransfer?: boolean },
+    options?: { forcePlayOnTransfer?: boolean; settlePlayback?: boolean },
   ): Promise<boolean> => {
     if (!isPlaybackDriving && !MOCK_MODE) {
       setInfoMessage('lowspot is not driving right now. Take control before using playback controls.');
@@ -377,7 +409,7 @@ function App() {
 
     try {
       await runOnce();
-      await refreshPlayback();
+      await refreshPlaybackAfterCommand(Boolean(options?.settlePlayback), originalTrackId);
       return true;
     } catch (error) {
       const firstMessage = error instanceof Error ? error.message : 'Unexpected Spotify API error.';
@@ -390,7 +422,7 @@ function App() {
       // executes the command. Don't log it as an error or reset optimistic UI — just
       // verify state via refresh.
       if (/Restriction violated/i.test(firstMessage)) {
-        await refreshPlayback();
+        await refreshPlaybackAfterCommand(Boolean(options?.settlePlayback), originalTrackId);
         return true;
       }
 
@@ -408,7 +440,7 @@ function App() {
           await refreshPlayback();
           await new Promise((resolve) => setTimeout(resolve, 250));
           await runOnce();
-          await refreshPlayback();
+          await refreshPlaybackAfterCommand(Boolean(options?.settlePlayback), originalTrackId);
           return true;
         } catch (retryError) {
           const retryMessage = retryError instanceof Error ? retryError.message : firstMessage;
@@ -426,10 +458,15 @@ function App() {
     }
   };
 
-  const refreshPlayback = async () => {
-    if (refreshPlaybackPendingRef.current) return;
+  const refreshPlayback = async (): Promise<PlaybackState | null> => {
+    if (refreshPlaybackPromiseRef.current) {
+      return refreshPlaybackPromiseRef.current;
+    }
+
     refreshPlaybackPendingRef.current = true;
-    try {
+    const refreshPromise = (async (): Promise<PlaybackState | null> => {
+      let latestPlayback: PlaybackState | null = null;
+
       await withApi(async (api) => {
         const trackId = useAppStore.getState().playback?.item?.id;
         const queuePollDue = useAppStore.getState().activeNav === 'Queue';
@@ -438,6 +475,7 @@ function App() {
         const queueState = queuePollDue ? await api.getQueue().catch(() => null) : null;
 
         if (playbackState) {
+          latestPlayback = playbackState;
           emptyPlaybackPollsRef.current = 0;
           setPlayback(playbackState);
           const newTrackId = playbackState.item?.id;
@@ -468,9 +506,15 @@ function App() {
           setQueue(queueState);
         }
       }, 'refreshPlayback');
-    } finally {
+
+      return latestPlayback ?? useAppStore.getState().playback;
+    })().finally(() => {
       refreshPlaybackPendingRef.current = false;
-    }
+      refreshPlaybackPromiseRef.current = null;
+    });
+
+    refreshPlaybackPromiseRef.current = refreshPromise;
+    return refreshPromise;
   };
 
   const hydrateSession = async () => {
@@ -1385,15 +1429,16 @@ function App() {
       return;
     }
 
+    const isContextPlayback = isContextRowType(row.type);
     const ok = await runPlaybackCommand('play-row', async (api) => {
       if (row.type === 'Track') {
         await api.play(sdkDeviceIdRef.current ?? undefined, getTrackPlaybackUris(index, uri));
-      } else if (isContextRowType(row.type)) {
+      } else if (isContextPlayback) {
         await api.play(sdkDeviceIdRef.current ?? undefined, undefined, uri);
       } else {
         await api.play(sdkDeviceIdRef.current ?? undefined, [uri]);
       }
-    });
+    }, { settlePlayback: isContextPlayback });
 
     if (ok && activeNav === 'Search') {
       setMode('lean');
@@ -1787,7 +1832,7 @@ function App() {
             void (async () => {
               const ok = await runPlaybackCommand('play-context', async (api) => {
                 await api.play(sdkDeviceIdRef.current ?? undefined, undefined, contextUri);
-              }, { forcePlayOnTransfer: true });
+              }, { forcePlayOnTransfer: true, settlePlayback: true });
 
               if (ok && activeNav === 'Search') {
                 setMode('lean');
