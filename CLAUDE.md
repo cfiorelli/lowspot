@@ -75,3 +75,4 @@ lowspot is a Tauri 2 desktop app with a React/TypeScript/Vite frontend.
 - Library pages should be persisted as they load. Anything already downloaded with Spotify quota should not need to be downloaded again.
 - Keep first-launch/collapsed view cheap: playback state is acceptable, but no proactive full library hydration.
 - If rate-limit behavior changes, preserve diagnostics that distinguish local protective cooldowns from actual Spotify `429` responses.
+- Be cautious with helper text. Do not add labels, status copy, instructional phrases, or duplicate titles unless the UI would be ambiguous without them; prefer clear controls and existing context over explanatory text.

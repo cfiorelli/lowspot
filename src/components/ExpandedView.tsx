@@ -5,7 +5,7 @@ import type { SpotifyDiagnosticEntry } from '../utils/spotifyDiagnostics';
 import { NAV_ITEMS } from '../utils/constants';
 import { buildRowsForNav } from './rows';
 import { formatArtists, formatDuration } from '../utils/format';
-import { PlaybackControlSwitch } from './PlaybackControlSwitch';
+import { AppControls } from './AppControls';
 
 interface ExpandedViewProps {
   activeNav: NavItem;
@@ -34,6 +34,7 @@ interface ExpandedViewProps {
   spotifyDiagnostics: SpotifyDiagnosticEntry[];
   onNavSelect: (nav: NavItem) => void;
   onCollapse: () => void;
+  onLogout: () => void;
   onClearSpotifyDiagnostics: () => void;
   onSearch: (query: string) => void;
   onRowSelect: (index: number) => void;
@@ -111,6 +112,7 @@ export function ExpandedView({
   spotifyDiagnostics,
   onNavSelect,
   onCollapse,
+  onLogout,
   onClearSpotifyDiagnostics,
   onSearch,
   onRowSelect,
@@ -131,17 +133,11 @@ export function ExpandedView({
     playback?.item && playback.item.duration_ms > 0
       ? Math.min(100, (playback.progress_ms / playback.item.duration_ms) * 100)
       : 0;
+  const showSectionTitle = activeNav !== 'Search' && activeNav !== 'Now Playing';
 
   return (
     <section className="expanded-view">
       <aside className="sidebar">
-        <header>
-          <PlaybackControlSwitch
-            active={playbackControlActive}
-            pending={playbackControlPending}
-            onToggle={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
-          />
-        </header>
         <nav>
           {NAV_ITEMS.map((item) => (
             <button
@@ -154,17 +150,22 @@ export function ExpandedView({
             </button>
           ))}
         </nav>
-        <p className="sdk-message">{sdkMessage}</p>
+        <footer className="sidebar-footer">
+          <AppControls
+            modeActionLabel="Collapse"
+            playbackControlActive={playbackControlActive}
+            playbackControlPending={playbackControlPending}
+            onModeAction={onCollapse}
+            onTakePlaybackControl={onTakePlaybackControl}
+            onReleasePlaybackControl={onReleasePlaybackControl}
+            onLogout={onLogout}
+          />
+        </footer>
       </aside>
 
       <main className="content">
         <header className="content-header">
-          <div className="content-title-group">
-            <button type="button" className="collapse-inline" onClick={onCollapse}>
-              Collapse
-            </button>
-            {activeNav === 'Search' ? null : <h3>{activeNav}</h3>}
-          </div>
+          {showSectionTitle ? <h3>{activeNav}</h3> : null}
           <div className="playback-controls">
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">
               {'<<'}
@@ -224,23 +225,19 @@ export function ExpandedView({
         </header>
 
         <section className="table">
-          <div className="expanded-now-playing" aria-live="polite">
-            {playback?.item ? (
-              <>
-                <p className="track">{playback.item.name}</p>
-                <p className="meta">{formatArtists(playback.item.artists)}</p>
-                <div className="progress-row">
-                  <span>{formatDuration(playback.progress_ms)}</span>
-                  <div className="progress-line-track" aria-label="Current track progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPercent)}>
-                    <div className="progress-line-fill" style={{ width: `${progressPercent}%` }} />
-                  </div>
-                  <span>{formatDuration(playback.item.duration_ms)}</span>
+          {playback?.item ? (
+            <div className="expanded-now-playing" aria-live="polite">
+              <p className="track">{playback.item.name}</p>
+              <p className="meta">{formatArtists(playback.item.artists)}</p>
+              <div className="progress-row">
+                <span>{formatDuration(playback.progress_ms)}</span>
+                <div className="progress-line-track" aria-label="Current track progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPercent)}>
+                  <div className="progress-line-fill" style={{ width: `${progressPercent}%` }} />
                 </div>
-              </>
-            ) : (
-              <p className="meta">No active track.</p>
-            )}
-          </div>
+                <span>{formatDuration(playback.item.duration_ms)}</span>
+              </div>
+            </div>
+          ) : null}
           {activeNav === 'Settings' ? (
             <div className="settings-note">
               <p>Set these env values locally and allowlist both Spotify callbacks:</p>

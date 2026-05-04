@@ -2,10 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import type { StatusLogEntry } from '../state/store';
 
 interface StatusStripProps {
-  errorMessage: string;
-  infoMessage: string;
   statusLog: StatusLogEntry[];
-  onClearLog: () => void;
 }
 
 const formatTime = (timestamp: number): string =>
@@ -15,7 +12,7 @@ const formatTime = (timestamp: number): string =>
     second: '2-digit',
   });
 
-export function StatusStrip({ errorMessage, infoMessage, statusLog, onClearLog }: StatusStripProps) {
+export function StatusStrip({ statusLog }: StatusStripProps) {
   const logRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
@@ -25,28 +22,16 @@ export function StatusStrip({ errorMessage, infoMessage, statusLog, onClearLog }
   }, [statusLog]);
 
   return (
-    <div className="status-strip" role="status" aria-live="polite">
-      <div className="status-current">
-        <p className={errorMessage ? 'error' : 'info'}>
-          {errorMessage || infoMessage || 'Ready.'}
-        </p>
-        {statusLog.length > 0 ? (
-          <button type="button" className="clear-log" onClick={onClearLog}>
-            Clear
-          </button>
-        ) : null}
+    <div className="status-strip">
+      <div className="status-log" ref={logRef} aria-label="Status message log" role="log" aria-live="polite">
+        {statusLog.map((entry) => (
+          <div key={entry.id} className={`status-log-line ${entry.level}`}>
+            <span>{formatTime(entry.timestamp)}</span>
+            <span>{entry.level}</span>
+            <span>{entry.message}</span>
+          </div>
+        ))}
       </div>
-      {statusLog.length > 0 ? (
-        <div className="status-log" ref={logRef} aria-label="Status message log">
-          {statusLog.map((entry) => (
-            <div key={entry.id} className={`status-log-line ${entry.level}`}>
-              <span>{formatTime(entry.timestamp)}</span>
-              <span>{entry.level}</span>
-              <span>{entry.message}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

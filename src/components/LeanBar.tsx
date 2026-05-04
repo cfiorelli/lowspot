@@ -1,6 +1,6 @@
 import type { PlaybackState } from '../spotify/types';
 import { formatArtists, formatDuration } from '../utils/format';
-import { PlaybackControlSwitch } from './PlaybackControlSwitch';
+import { AppControls } from './AppControls';
 
 interface LeanBarProps {
   playback: PlaybackState | null;
@@ -15,6 +15,7 @@ interface LeanBarProps {
   onTakePlaybackControl: () => void;
   onReleasePlaybackControl: () => void;
   onExpand: () => void;
+  onLogout: () => void;
   onSearchSubmit: (query: string) => void;
 }
 
@@ -31,6 +32,7 @@ export function LeanBar({
   onTakePlaybackControl,
   onReleasePlaybackControl,
   onExpand,
+  onLogout,
   onSearchSubmit,
 }: LeanBarProps) {
   const progressPercent =
@@ -41,14 +43,15 @@ export function LeanBar({
   return (
     <section className="lean-bar">
       <div className="transport">
-        <PlaybackControlSwitch
-          active={playbackControlActive}
-          pending={playbackControlPending}
-          onToggle={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
+        <AppControls
+          modeActionLabel="Expand"
+          playbackControlActive={playbackControlActive}
+          playbackControlPending={playbackControlPending}
+          onModeAction={onExpand}
+          onTakePlaybackControl={onTakePlaybackControl}
+          onReleasePlaybackControl={onReleasePlaybackControl}
+          onLogout={onLogout}
         />
-        <button type="button" className="expand-button" onClick={onExpand} aria-label="Expand view">
-          Expand
-        </button>
         <button type="button" className="transport-button" onClick={onPrevious} aria-label="Previous" disabled={controlsDisabled}>
           {'<<'}
         </button>
@@ -72,9 +75,7 @@ export function LeanBar({
               {formatDuration(playback.progress_ms)} / {formatDuration(playback.item.duration_ms)}
             </p>
           </>
-        ) : (
-          <p className="artist">Ready. Search or expand to choose music.</p>
-        )}
+        ) : null}
       </div>
 
       <form

@@ -13,11 +13,12 @@
 .transport {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.transport .expand-button {
-  min-width: 72px;
+.transport .app-controls {
+  margin-right: 4px;
 }
 
 .transport .transport-button {

@@ -182,63 +182,35 @@ button:focus-visible {
   overflow: hidden;
 }
 
-.top-strip {
+.app-controls {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex: 0 0 auto;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border);
-  color: var(--text-muted);
+  gap: 6px;
 }
 
-.top-strip p {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.app-controls .mode-button {
+  min-width: 76px;
 }
 
-.top-strip button {
-  flex: 0 0 auto;
+.app-controls .logout-button {
+  min-width: 68px;
 }
 
 .status-strip {
-  padding: 0 var(--space-3) var(--space-2);
+  display: flex;
+  flex: 0 0 144px;
+  min-height: 0;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   background: rgba(15, 19, 23, 0.7);
-  flex: 0 1 auto;
-  min-height: 0;
   overflow: hidden;
-}
-
-.status-current {
-  flex: 0 0 auto;
-  min-height: 28px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.status-current p {
-  margin: 4px 0;
-  font-size: 12px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.clear-log {
-  padding: 3px 7px;
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 .status-log {
-  max-height: 96px;
+  flex: 1 1 auto;
+  width: 100%;
+  max-height: none;
+  min-height: 0;
   overflow: auto;
   border: 1px solid rgba(42, 50, 58, 0.75);
   border-radius: 6px;
@@ -257,9 +229,7 @@ button:focus-visible {
 }
 
 .app-shell[data-mode='lean'] .status-strip {
-  display: flex;
   flex: 1 1 auto;
-  flex-direction: column;
 }
 
 .app-shell[data-mode='lean'] .status-log {
@@ -337,12 +307,4 @@ button:focus-visible {
   font-family: var(--font-mono);
   color: var(--text-muted);
   font-size: 12px;
-}
-
-@media (max-width: 480px) {
-  .top-strip {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
 }

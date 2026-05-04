@@ -85,7 +85,6 @@ function App() {
     mode,
     activeNav,
     authReady,
-    profile,
     tokens,
     playback,
     queue,
@@ -95,11 +94,9 @@ function App() {
     likedSongs,
     currentTrackLiked,
     searchResults,
-    searchQuery,
     selectedRow,
     sdkMessage,
     errorMessage,
-    infoMessage,
     statusLog,
     setMode,
     setActiveNav,
@@ -119,7 +116,6 @@ function App() {
     setSdkMessage,
     setErrorMessage,
     setInfoMessage,
-    clearStatusLog,
   } = useAppStore();
 
   const apiRef = useRef<SpotifyApiClient | null>(null);
@@ -1725,22 +1721,7 @@ function App() {
 
   return (
     <main className="app-shell" data-mode={mode}>
-      <header className="top-strip">
-        <p>
-          Signed in as {profile?.display_name ?? 'Spotify user'}
-          {searchQuery ? ` • Last search: ${searchQuery}` : ''}
-        </p>
-        <button type="button" onClick={handleLogout}>
-          Logout
-        </button>
-      </header>
-
-      <StatusStrip
-        errorMessage={errorMessage}
-        infoMessage={infoMessage}
-        statusLog={statusLog}
-        onClearLog={clearStatusLog}
-      />
+      <StatusStrip statusLog={statusLog} />
 
       {mode === 'lean' ? (
         <LeanBar
@@ -1781,6 +1762,9 @@ function App() {
             setMode('expanded');
             void resizeForMode('expanded');
           }}
+          onLogout={() => {
+            void handleLogout();
+          }}
           onSearchSubmit={(query) => {
             void handleSearch(query);
           }}
@@ -1820,6 +1804,9 @@ function App() {
           onCollapse={() => {
             setMode('lean');
             void resizeForMode('lean');
+          }}
+          onLogout={() => {
+            void handleLogout();
           }}
           onClearSpotifyDiagnostics={() => {
             void clearSpotifyDiagnostics().then(() => setSpotifyDiagnostics([]));

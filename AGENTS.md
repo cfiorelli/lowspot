@@ -49,6 +49,7 @@ cp -rf source dest          # NOT: cp -r source dest
 - Repeated real `429`s on one endpoint should increase local backoff rather than creating a 30-second retry loop.
 - Keep launch cheap. The app starts in collapsed/`lean` mode; do not hydrate full library, queue, playlists, or recently played on startup.
 - Anything downloaded with Spotify quota should be persisted as it arrives and reused after relaunch.
+- Be cautious with helper text. Do not add labels, status copy, instructional phrases, or duplicate titles unless the UI would be ambiguous without them; prefer clear controls and existing context over explanatory text.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker

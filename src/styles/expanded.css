@@ -14,15 +14,13 @@
   gap: 8px;
 }
 
-.sidebar header {
-  display: grid;
-  justify-items: start;
-}
-
 .sidebar nav {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 4px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .sidebar nav button {
@@ -34,9 +32,26 @@
   background: var(--row-selected);
 }
 
-.sidebar .sdk-message {
-  color: var(--text-muted);
-  font-size: 12px;
+.sidebar-footer {
+  margin-top: auto;
+}
+
+.sidebar-footer .app-controls {
+  display: grid;
+  grid-template-columns: 76px 76px;
+  gap: 6px;
+  justify-content: start;
+}
+
+.sidebar-footer .app-controls .control-switch {
+  grid-column: 1 / -1;
+  width: 142px;
+}
+
+.sidebar-footer .app-controls .logout-button,
+.sidebar-footer .app-controls .mode-button {
+  min-width: 0;
+  width: 76px;
 }
 
 .content {
@@ -58,12 +73,6 @@
 .content-header h3 {
   margin: 0;
   font-size: 16px;
-}
-
-.content-title-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .content-header form {
