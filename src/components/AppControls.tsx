@@ -21,17 +21,19 @@ export function AppControls({
 }: AppControlsProps) {
   return (
     <div className="app-controls">
-      <button type="button" className="mode-button" onClick={onModeAction}>
-        {modeActionLabel}
-      </button>
       <PlaybackControlSwitch
         active={playbackControlActive}
         pending={playbackControlPending}
         onToggle={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
       />
-      <button type="button" className="logout-button" onClick={onLogout}>
-        Logout
-      </button>
+      <div className="app-controls-actions">
+        <button type="button" className="logout-button" onClick={onLogout}>
+          Logout
+        </button>
+        <button type="button" className="mode-button" onClick={onModeAction}>
+          {modeActionLabel}
+        </button>
+      </div>
     </div>
   );
 }

@@ -37,21 +37,7 @@
 }
 
 .sidebar-footer .app-controls {
-  display: grid;
-  grid-template-columns: 76px 76px;
-  gap: 6px;
-  justify-content: start;
-}
-
-.sidebar-footer .app-controls .control-switch {
-  grid-column: 1 / -1;
-  width: 142px;
-}
-
-.sidebar-footer .app-controls .logout-button,
-.sidebar-footer .app-controls .mode-button {
-  min-width: 0;
-  width: 76px;
+  width: 152px;
 }
 
 .content {

@@ -277,7 +277,7 @@ export function ExpandedView({
           ) : null}
           <div className="table-head">
             <span>Title</span>
-            <span>Meta</span>
+            <span>Artist</span>
           </div>
           <div className="table-body">
             {rows.length === 0 ? (

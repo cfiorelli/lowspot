@@ -18,13 +18,7 @@ export function PlaybackControlSwitch({
       aria-pressed={active}
       aria-label={active ? 'Stop lowspot playback control' : 'Let lowspot control playback'}
     >
-      <span className="control-switch-labels" aria-hidden="true">
-        <span>off</span>
-        <span>on</span>
-      </span>
-      <span className="control-switch-track" aria-hidden="true">
-        <span className="control-switch-wordmark">lowspot</span>
-      </span>
+      lowspot {active ? 'on' : 'off'}
     </button>
   );
 }

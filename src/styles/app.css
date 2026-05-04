@@ -68,85 +68,24 @@ button:disabled:hover {
 }
 
 .control-switch {
-  display: grid;
-  grid-template-rows: 12px 28px;
-  gap: 2px;
-  width: 142px;
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  width: 100%;
+  min-width: 152px;
   color: var(--text-muted);
+  font-weight: 600;
 }
 
-.control-switch:hover {
-  background: transparent;
+.control-switch.active {
+  border-color: rgba(71, 185, 128, 0.58);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  color: var(--accent);
 }
 
 .control-switch:disabled {
   opacity: 0.72;
 }
 
-.control-switch-labels {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: end;
-  padding: 0 12px;
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.control-switch-labels span:last-child {
-  text-align: right;
-}
-
-.control-switch-track {
-  position: relative;
-  display: block;
-  height: 28px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(12, 16, 19, 0.88);
-  overflow: hidden;
-}
-
-.control-switch-wordmark {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 78px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(71, 185, 128, 0.18);
-  border-radius: 4px;
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
-  transition:
-    transform 180ms ease,
-    color 180ms ease,
-    border-color 180ms ease,
-    background-color 180ms ease;
-}
-
-.control-switch:not(.active) .control-switch-wordmark {
+.control-switch:not(.active) {
   animation: controlHint 2400ms ease-in-out infinite;
-}
-
-.control-switch.active .control-switch-track {
-  border-color: rgba(71, 185, 128, 0.58);
-}
-
-.control-switch.active .control-switch-wordmark {
-  transform: translateX(56px);
-  color: var(--accent);
-  border-color: rgba(71, 185, 128, 0.55);
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
 }
 
 @keyframes controlHint {
@@ -183,17 +122,22 @@ button:focus-visible {
 }
 
 .app-controls {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  width: max-content;
+}
+
+.app-controls-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px;
 }
 
-.app-controls .mode-button {
-  min-width: 76px;
-}
-
+.app-controls .mode-button,
 .app-controls .logout-button {
-  min-width: 68px;
+  min-width: 0;
+  width: 100%;
 }
 
 .status-strip {
