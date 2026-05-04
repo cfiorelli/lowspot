@@ -38,7 +38,16 @@ bd close <id>         # Complete work
    git push
    git status
    ```
-7. Hand off with whether changes are local-only or pushed.
+7. After a successful `git push`, **always publish a new GitHub Release with a fresh DMG build**:
+   ```bash
+   npm run tauri:build
+   # Bump the patch version (v0.1.0 → v0.1.1, etc.) — check latest with: gh release list
+   gh release create vX.Y.Z src-tauri/target/release/bundle/dmg/*.dmg \
+     --title "lowspot vX.Y.Z" \
+     --notes "See git log for changes."
+   ```
+   The README's download link points to `/releases/latest`, so the new release becomes the live download immediately.
+8. Hand off with whether changes are local-only or pushed, and whether a release was published.
 
 **Critical rules:**
 - Never say code is on GitHub unless `git push` succeeded.
