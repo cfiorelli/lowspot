@@ -1816,7 +1816,6 @@ function App() {
           onConnectPlaybackSdk={() => {
             void handleConnectPlaybackSdk();
           }}
-          onLogout={handleLogout}
         />
       )}
     </main>

@@ -5,6 +5,7 @@ import type { SpotifyDiagnosticEntry } from '../utils/spotifyDiagnostics';
 import { NAV_ITEMS } from '../utils/constants';
 import { buildRowsForNav } from './rows';
 import { formatArtists, formatDuration } from '../utils/format';
+import { PlaybackControlSwitch } from './PlaybackControlSwitch';
 
 interface ExpandedViewProps {
   activeNav: NavItem;
@@ -49,7 +50,6 @@ interface ExpandedViewProps {
   onCycleRepeat: () => void;
   onSetVolume: (volumePercent: number) => void;
   onConnectPlaybackSdk: () => void;
-  onLogout: () => void;
 }
 
 const formatDiagnosticTime = (timestamp: number): string =>
@@ -129,7 +129,6 @@ export function ExpandedView({
   onCycleRepeat,
   onSetVolume,
   onConnectPlaybackSdk,
-  onLogout,
 }: ExpandedViewProps) {
   const rows = buildRowsForNav(activeNav, likedSongs, likedAlbums, playlists, searchResults, queue, recentlyPlayed, playback);
   const progressPercent =
@@ -141,10 +140,11 @@ export function ExpandedView({
     <section className="expanded-view">
       <aside className="sidebar">
         <header>
-          <h2>lowspot</h2>
-          <button type="button" onClick={onCollapse}>
-            Collapse
-          </button>
+          <PlaybackControlSwitch
+            active={playbackControlActive}
+            pending={playbackControlPending}
+            onToggle={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
+          />
         </header>
         <nav>
           {NAV_ITEMS.map((item) => (
@@ -159,9 +159,6 @@ export function ExpandedView({
           ))}
         </nav>
         <p className="sdk-message">{sdkMessage}</p>
-        <button type="button" className="logout" onClick={onLogout}>
-          Logout
-        </button>
       </aside>
 
       <main className="content">
@@ -176,19 +173,8 @@ export function ExpandedView({
                 {sectionLoading ? 'Syncing...' : 'Sync 50'}
               </button>
             ) : null}
-            <span className={`drive-state ${playbackControlActive ? 'active' : ''}`}>
-              {playbackControlActive ? 'lowspot is driving' : 'not driving'}
-            </span>
           </div>
           <div className="playback-controls">
-            <button
-              type="button"
-              className={`drive-toggle ${playbackControlActive ? 'active' : ''}`}
-              onClick={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
-              disabled={playbackControlPending}
-            >
-              {playbackControlActive ? 'Stop Driving' : 'Take Control'}
-            </button>
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">
               {'<<'}
             </button>

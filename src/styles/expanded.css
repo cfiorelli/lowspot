@@ -15,14 +15,8 @@
 }
 
 .sidebar header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.sidebar h2 {
-  margin: 0;
-  font-size: 18px;
+  display: grid;
+  justify-items: start;
 }
 
 .sidebar nav {
@@ -43,10 +37,6 @@
 .sidebar .sdk-message {
   color: var(--text-muted);
   font-size: 12px;
-}
-
-.sidebar .logout {
-  margin-top: auto;
 }
 
 .content {
@@ -76,16 +66,8 @@
   gap: 8px;
 }
 
-.content-title-group .drive-state {
-  max-width: 170px;
-}
-
 .sync-page-button {
   min-width: 74px;
-}
-
-.collapse-inline {
-  display: none;
 }
 
 .content-header form {
@@ -107,15 +89,6 @@
 
 .playback-controls .play-toggle {
   min-width: 62px;
-}
-
-.playback-controls .drive-toggle {
-  min-width: 108px;
-}
-
-.playback-controls .drive-toggle.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
 }
 
 .playback-controls .shuffle-toggle {
@@ -291,14 +264,6 @@
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--border);
-  }
-
-  .sidebar header button {
-    display: none;
-  }
-
-  .collapse-inline {
-    display: inline-flex;
   }
 
   .table-head,

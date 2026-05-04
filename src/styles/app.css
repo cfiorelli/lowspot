@@ -67,6 +67,99 @@ button:disabled:hover {
   background: var(--bg-panel);
 }
 
+.control-switch {
+  display: grid;
+  grid-template-rows: 12px 28px;
+  gap: 2px;
+  width: 142px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.control-switch:hover {
+  background: transparent;
+}
+
+.control-switch:disabled {
+  opacity: 0.72;
+}
+
+.control-switch-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.control-switch-labels span:last-child {
+  text-align: right;
+}
+
+.control-switch-track {
+  position: relative;
+  display: block;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(12, 16, 19, 0.88);
+  overflow: hidden;
+}
+
+.control-switch-wordmark {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 78px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(71, 185, 128, 0.18);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    transform 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.control-switch:not(.active) .control-switch-wordmark {
+  animation: controlHint 2400ms ease-in-out infinite;
+}
+
+.control-switch.active .control-switch-track {
+  border-color: rgba(71, 185, 128, 0.58);
+}
+
+.control-switch.active .control-switch-wordmark {
+  transform: translateX(56px);
+  color: var(--accent);
+  border-color: rgba(71, 185, 128, 0.55);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+}
+
+@keyframes controlHint {
+  0%,
+  100% {
+    border-color: rgba(71, 185, 128, 0.12);
+  }
+
+  50% {
+    border-color: rgba(71, 185, 128, 0.42);
+  }
+}
+
 input {
   background: #0f1316;
   color: var(--text);

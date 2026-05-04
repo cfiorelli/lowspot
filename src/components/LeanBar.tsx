@@ -1,5 +1,6 @@
 import type { PlaybackState } from '../spotify/types';
 import { formatArtists, formatDuration } from '../utils/format';
+import { PlaybackControlSwitch } from './PlaybackControlSwitch';
 
 interface LeanBarProps {
   playback: PlaybackState | null;
@@ -40,19 +41,13 @@ export function LeanBar({
   return (
     <section className="lean-bar">
       <div className="transport">
-        <p className="lean-wordmark" aria-hidden="true">
-          lowspot
-        </p>
+        <PlaybackControlSwitch
+          active={playbackControlActive}
+          pending={playbackControlPending}
+          onToggle={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
+        />
         <button type="button" className="expand-button" onClick={onExpand} aria-label="Expand view">
           Expand
-        </button>
-        <button
-          type="button"
-          className={`drive-toggle ${playbackControlActive ? 'active' : ''}`}
-          onClick={playbackControlActive ? onReleasePlaybackControl : onTakePlaybackControl}
-          disabled={playbackControlPending}
-        >
-          {playbackControlActive ? 'Stop Driving' : 'Take Control'}
         </button>
         <button type="button" className="transport-button" onClick={onPrevious} aria-label="Previous" disabled={controlsDisabled}>
           {'<<'}
@@ -69,9 +64,6 @@ export function LeanBar({
       </div>
 
       <div className="now-playing">
-        <p className={`drive-state ${playbackControlActive ? 'active' : ''}`}>
-          {playbackControlActive ? 'lowspot is driving' : 'lowspot is not driving right now'}
-        </p>
         {playback?.item ? (
           <>
             <p className="track">{playback.item.name}</p>
