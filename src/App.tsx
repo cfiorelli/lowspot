@@ -31,7 +31,6 @@ import {
   PAUSED_PLAYBACK_POLL_INTERVAL_MS,
   POLL_INTERVAL_MS,
 } from './utils/constants';
-import type { NavItem } from './utils/constants';
 import {
   loadCachedLikedSongs, saveCachedLikedSongs,
   loadCachedLikedAlbums, saveCachedLikedAlbums,
@@ -79,9 +78,6 @@ const randomIndex = (length: number): number => {
 
 const isFresh = (timestamp: number | undefined, maxAgeMs: number): boolean =>
   typeof timestamp === 'number' && Date.now() - timestamp < maxAgeMs;
-
-const isLibraryNav = (nav: NavItem): nav is 'Liked Songs' | 'Liked Albums' =>
-  nav === 'Liked Songs' || nav === 'Liked Albums';
 
 function App() {
   const {
@@ -132,6 +128,7 @@ function App() {
   const emptyPlaybackPollsRef = useRef(0);
   const sectionLoadPendingRef = useRef(false);
   const gentleLibrarySyncCancelRef = useRef(false);
+  const gentleLibrarySyncTargetRef = useRef<'Liked Songs' | 'Liked Albums' | null>(null);
   const sdkDeviceIdRef = useRef<string | null>(null);
   const sdkDisconnectRef = useRef<(() => void) | null>(null);
   const lastRecentlyPlayedFetchAtRef = useRef(0);
@@ -142,7 +139,6 @@ function App() {
   const [pendingRepeat, setPendingRepeat] = useState<'off' | 'track' | 'context' | null>(null);
   const [loadingSection, setLoadingSection] = useState<typeof activeNav | null>(null);
   const [sectionMessage, setSectionMessage] = useState('');
-  const [gentleLibrarySyncTarget, setGentleLibrarySyncTarget] = useState<'Liked Songs' | 'Liked Albums' | null>(null);
   const [cooldownSummary, setCooldownSummary] = useState('');
   const [spotifyDiagnostics, setSpotifyDiagnostics] = useState<SpotifyDiagnosticEntry[]>([]);
   const [sdkConnecting, setSdkConnecting] = useState(false);
@@ -609,6 +605,7 @@ function App() {
     apiRef.current?.cancel();
     apiRef.current = null;
     await clearTokens();
+    gentleLibrarySyncTargetRef.current = null;
     setTokens(null);
     setProfile(null);
     setPlayback(null);
@@ -617,7 +614,6 @@ function App() {
     setCurrentTrackLiked(false);
     setLoadingSection(null);
     setSectionMessage('');
-    setGentleLibrarySyncTarget(null);
     sectionLoadPendingRef.current = false;
     setPlaybackControlMode('passenger');
     setErrorMessage('');
@@ -877,10 +873,13 @@ function App() {
       }
       if (cached.length > 0) {
         const message = cacheMeta?.complete
-          ? `Loaded ${cached.length} cached liked songs. Spotify refresh is paused to protect quota.`
-          : `Loaded ${cached.length} cached liked songs. Cache is partial; Spotify sync is paused to protect quota.`;
+          ? `Loaded ${cached.length} cached liked songs. Background refresh is skipped to protect Spotify quota.`
+          : `Loaded ${cached.length} cached liked songs. Gentle fill will continue in the background.`;
         setInfoMessage(message);
         finishSection(message);
+        if (!cacheMeta?.complete) {
+          void startGentleLibrarySync('Liked Songs');
+        }
         return;
       }
 
@@ -963,10 +962,13 @@ function App() {
           : loaded.fromCache
             ? `Loaded ${loaded.loaded} liked songs from cache.`
             : loaded.capped
-              ? `Loaded ${loaded.loaded} of ${loaded.total} liked songs. More pages are paused to protect Spotify quota.`
+              ? `Loaded ${loaded.loaded} of ${loaded.total} liked songs. Gentle fill will continue in the background.`
               : `Loaded ${loaded.loaded} liked songs.`;
       setInfoMessage(message);
       finishSection(message);
+      if (loaded?.capped) {
+        void startGentleLibrarySync('Liked Songs');
+      }
       return;
     }
 
@@ -987,10 +989,13 @@ function App() {
       }
       if (cached.length > 0) {
         const message = cacheMeta?.complete
-          ? `Loaded ${cached.length} cached liked albums. Spotify refresh is paused to protect quota.`
-          : `Loaded ${cached.length} cached liked albums. Cache is partial; Spotify sync is paused to protect quota.`;
+          ? `Loaded ${cached.length} cached liked albums. Background refresh is skipped to protect Spotify quota.`
+          : `Loaded ${cached.length} cached liked albums. Gentle fill will continue in the background.`;
         setInfoMessage(message);
         finishSection(message);
+        if (!cacheMeta?.complete) {
+          void startGentleLibrarySync('Liked Albums');
+        }
         return;
       }
 
@@ -1070,10 +1075,13 @@ function App() {
           : loaded.fromCache
             ? `Loaded ${loaded.loaded} liked albums from cache.`
             : loaded.capped
-              ? `Loaded ${loaded.loaded} of ${loaded.total} liked albums. More pages are paused to protect Spotify quota.`
+              ? `Loaded ${loaded.loaded} of ${loaded.total} liked albums. Gentle fill will continue in the background.`
               : `Loaded ${loaded.loaded} liked albums.`;
       setInfoMessage(message);
       finishSection(message);
+      if (loaded?.capped) {
+        void startGentleLibrarySync('Liked Albums');
+      }
       return;
     }
 
@@ -1146,10 +1154,13 @@ function App() {
     while (!gentleLibrarySyncCancelRef.current) {
       const cooldown = getSpotifyCooldown(path);
       if (cooldown) {
-        const message = `Gentle ${nav.toLowerCase()} fill paused for Spotify cooldown. Try again in ${formatCooldownRemaining(cooldown.until)}.`;
+        const waitMs = Math.max(1000, cooldown.until - Date.now() + GENTLE_LIBRARY_SYNC_IDLE_BUFFER_MS);
+        const message = `Gentle ${nav.toLowerCase()} fill waiting ${Math.ceil(waitMs / 1000)}s for Spotify cooldown.`;
         setInfoMessage(message);
         setSectionMessage(message);
-        return false;
+        const keepGoing = await waitForGentleLibrarySync(waitMs);
+        if (!keepGoing) return false;
+        continue;
       }
 
       const budget = getSpotifyRequestBudget();
@@ -1188,6 +1199,7 @@ function App() {
       ), 'gentleLibrarySync:Liked Songs');
 
       if (!page) {
+        if (getSpotifyCooldown('/me/tracks')) continue;
         const message = `Kept ${cached.length} cached liked songs. Gentle fill paused; check the status message for cooldown details.`;
         setInfoMessage(message);
         setSectionMessage(message);
@@ -1252,6 +1264,7 @@ function App() {
       ), 'gentleLibrarySync:Liked Albums');
 
       if (!page) {
+        if (getSpotifyCooldown('/me/albums')) continue;
         const message = `Kept ${cached.length} cached liked albums. Gentle fill paused; check the status message for cooldown details.`;
         setInfoMessage(message);
         setSectionMessage(message);
@@ -1294,19 +1307,15 @@ function App() {
     }
   };
 
-  const toggleGentleLibrarySync = async (nav: 'Liked Songs' | 'Liked Albums') => {
-    if (gentleLibrarySyncTarget === nav) {
-      gentleLibrarySyncCancelRef.current = true;
-      setGentleLibrarySyncTarget(null);
-      setLoadingSection((current) => (current === nav ? null : current));
-      const message = `Paused gentle ${nav.toLowerCase()} fill. Cached progress is saved.`;
-      setInfoMessage(message);
-      setSectionMessage(message);
+  const startGentleLibrarySync = async (nav: 'Liked Songs' | 'Liked Albums') => {
+    const currentTarget = gentleLibrarySyncTargetRef.current;
+
+    if (currentTarget === nav) {
       return;
     }
 
-    if (gentleLibrarySyncTarget) {
-      setInfoMessage(`Pause ${gentleLibrarySyncTarget} before starting ${nav}.`);
+    if (currentTarget) {
+      setInfoMessage(`Gentle ${currentTarget.toLowerCase()} fill is already running. ${nav} will wait.`);
       return;
     }
 
@@ -1317,25 +1326,10 @@ function App() {
       return;
     }
 
-    const cooldown = getSpotifyCooldown(nav === 'Liked Songs' ? '/me/tracks' : '/me/albums');
-    if (cooldown) {
-      void recordSpotifyDiagnostic({
-        context: `gentleLibrarySync:${nav}`,
-        method: 'LOCAL',
-        path: cooldown.path,
-        outcome: 'local-cooldown',
-        retryAfterMs: Math.max(0, cooldown.until - Date.now()),
-      });
-      setErrorMessage(
-        `lowspot is pausing ${nav} sync to protect Spotify quota. Try again in ${formatCooldownRemaining(cooldown.until)}.`,
-      );
-      return;
-    }
-
     gentleLibrarySyncCancelRef.current = false;
-    setGentleLibrarySyncTarget(nav);
+    gentleLibrarySyncTargetRef.current = nav;
     setLoadingSection(nav);
-    setSectionMessage(`Gentle ${nav.toLowerCase()} fill starting...`);
+    setSectionMessage(`Gentle ${nav.toLowerCase()} fill starting in the background...`);
 
     try {
       if (nav === 'Liked Songs') {
@@ -1344,9 +1338,16 @@ function App() {
       }
 
       await runGentleLikedAlbumsSync();
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : `Gentle ${nav.toLowerCase()} fill failed. Cached progress is saved.`;
+      setErrorMessage(message);
     } finally {
       gentleLibrarySyncCancelRef.current = false;
-      setGentleLibrarySyncTarget((current) => (current === nav ? null : current));
+      if (gentleLibrarySyncTargetRef.current === nav) {
+        gentleLibrarySyncTargetRef.current = null;
+      }
       setLoadingSection((current) => (current === nav ? null : current));
     }
   };
@@ -1646,14 +1647,6 @@ function App() {
   const playbackEndpointCooldown = getSpotifyCooldown('/me/player');
   const playbackSettingsDisabled = !isPlaybackDriving || !playback?.device?.id || Boolean(playbackEndpointCooldown);
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
-  const activeLibrarySync = isLibraryNav(activeNav) && gentleLibrarySyncTarget === activeNav;
-  const otherLibrarySyncRunning = Boolean(gentleLibrarySyncTarget && gentleLibrarySyncTarget !== activeNav);
-  const librarySyncLabel = activeLibrarySync
-    ? 'Pause Fill'
-    : otherLibrarySyncRunning
-      ? `Filling ${gentleLibrarySyncTarget}`
-      : 'Fill Cache';
-  const librarySyncDisabled = otherLibrarySyncRunning || (loadingSection === activeNav && !activeLibrarySync);
 
   return (
     <main className="app-shell" data-mode={mode}>
@@ -1743,10 +1736,6 @@ function App() {
           sectionMessage={sectionMessage}
           cooldownSummary={cooldownSummary}
           spotifyDiagnostics={spotifyDiagnostics}
-          librarySyncAvailable={isLibraryNav(activeNav)}
-          librarySyncActive={activeLibrarySync}
-          librarySyncDisabled={librarySyncDisabled}
-          librarySyncLabel={librarySyncLabel}
           onNavSelect={(nav) => {
             setActiveNav(nav);
             if (nav === 'Settings') {
@@ -1759,11 +1748,6 @@ function App() {
           }}
           onClearSpotifyDiagnostics={() => {
             void clearSpotifyDiagnostics().then(() => setSpotifyDiagnostics([]));
-          }}
-          onToggleLibrarySync={() => {
-            if (isLibraryNav(activeNav)) {
-              void toggleGentleLibrarySync(activeNav);
-            }
           }}
           onSearch={(query) => {
             void handleSearch(query);

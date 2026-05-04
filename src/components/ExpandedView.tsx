@@ -32,14 +32,9 @@ interface ExpandedViewProps {
   sectionMessage: string;
   cooldownSummary: string;
   spotifyDiagnostics: SpotifyDiagnosticEntry[];
-  librarySyncAvailable: boolean;
-  librarySyncActive: boolean;
-  librarySyncDisabled: boolean;
-  librarySyncLabel: string;
   onNavSelect: (nav: NavItem) => void;
   onCollapse: () => void;
   onClearSpotifyDiagnostics: () => void;
-  onToggleLibrarySync: () => void;
   onSearch: (query: string) => void;
   onRowSelect: (index: number) => void;
   onPlayTrack: (trackUri: string, index: number) => void;
@@ -114,14 +109,9 @@ export function ExpandedView({
   sectionMessage,
   cooldownSummary,
   spotifyDiagnostics,
-  librarySyncAvailable,
-  librarySyncActive,
-  librarySyncDisabled,
-  librarySyncLabel,
   onNavSelect,
   onCollapse,
   onClearSpotifyDiagnostics,
-  onToggleLibrarySync,
   onSearch,
   onRowSelect,
   onPlayTrack,
@@ -174,16 +164,6 @@ export function ExpandedView({
               Collapse
             </button>
             <h3>{activeNav}</h3>
-            {librarySyncAvailable ? (
-              <button
-                type="button"
-                className={`sync-page-button ${librarySyncActive ? 'sync-active' : ''}`}
-                onClick={onToggleLibrarySync}
-                disabled={librarySyncDisabled}
-              >
-                {librarySyncLabel}
-              </button>
-            ) : null}
           </div>
           <div className="playback-controls">
             <button type="button" className="transport-button" onClick={onPrevious} disabled={controlsDisabled} aria-label="Previous">
