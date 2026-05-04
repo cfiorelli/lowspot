@@ -25,6 +25,7 @@ export interface CacheMeta {
   syncedAt: number;
   total?: number;
   complete?: boolean;
+  nextOffset?: number;
 }
 
 // Slim storage formats: only the fields the UI/playback path needs.
@@ -383,7 +384,8 @@ export async function saveCachedPlaylists(items: SpotifyPlaylist[]): Promise<Cac
 function isCacheMeta(value: unknown): value is CacheMeta {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.syncedAt === 'number' && Number.isFinite(v.syncedAt);
+  return typeof v.syncedAt === 'number' && Number.isFinite(v.syncedAt) &&
+    (v.nextOffset === undefined || (typeof v.nextOffset === 'number' && Number.isFinite(v.nextOffset)));
 }
 
 export async function loadCacheMeta(kind: CacheKind): Promise<CacheMeta | null> {

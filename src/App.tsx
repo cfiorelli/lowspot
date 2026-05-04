@@ -26,7 +26,6 @@ import {
   EXPANDED_SIZE,
   IDLE_PLAYBACK_POLL_INTERVAL_MS,
   LEAN_SIZE,
-  LIBRARY_PAGE_DELAY_MS,
   LOGIN_SIZE,
   MIN_SIZE,
   PAUSED_PLAYBACK_POLL_INTERVAL_MS,
@@ -53,11 +52,9 @@ import './styles/lean.css';
 import './styles/expanded.css';
 
 const LIBRARY_PAGE_SIZE = 50;
-// No cap on first-run pages: we paginate slowly and persist progress as we go,
-// so successful pages are not redownloaded.
-const MAX_INITIAL_LIBRARY_PAGES = Infinity;
-// Incrementally fetch up to 1000 new songs since last sync.
-const MAX_INCREMENTAL_LIBRARY_PAGES = 20;
+const MAX_AUTO_LIBRARY_PAGES = 1;
+const GENTLE_LIBRARY_SYNC_PAGE_DELAY_MS = 60_000;
+const GENTLE_LIBRARY_SYNC_IDLE_BUFFER_MS = 5_000;
 const MOCK_MODE = import.meta.env.VITE_LOWSPOT_MOCK === '1';
 const LIBRARY_CACHE_REVALIDATE_MS = 30 * 60_000;
 const RECENTLY_PLAYED_REVALIDATE_MS = 2 * 60_000;
@@ -134,6 +131,7 @@ function App() {
   const refreshPlaybackPendingRef = useRef(false);
   const emptyPlaybackPollsRef = useRef(0);
   const sectionLoadPendingRef = useRef(false);
+  const gentleLibrarySyncCancelRef = useRef(false);
   const sdkDeviceIdRef = useRef<string | null>(null);
   const sdkDisconnectRef = useRef<(() => void) | null>(null);
   const lastRecentlyPlayedFetchAtRef = useRef(0);
@@ -144,6 +142,7 @@ function App() {
   const [pendingRepeat, setPendingRepeat] = useState<'off' | 'track' | 'context' | null>(null);
   const [loadingSection, setLoadingSection] = useState<typeof activeNav | null>(null);
   const [sectionMessage, setSectionMessage] = useState('');
+  const [gentleLibrarySyncTarget, setGentleLibrarySyncTarget] = useState<'Liked Songs' | 'Liked Albums' | null>(null);
   const [cooldownSummary, setCooldownSummary] = useState('');
   const [spotifyDiagnostics, setSpotifyDiagnostics] = useState<SpotifyDiagnosticEntry[]>([]);
   const [sdkConnecting, setSdkConnecting] = useState(false);
@@ -605,6 +604,7 @@ function App() {
     sdkDisconnectRef.current?.();
     sdkDisconnectRef.current = null;
     sdkDeviceIdRef.current = null;
+    gentleLibrarySyncCancelRef.current = true;
     setSdkDeviceId(null);
     apiRef.current?.cancel();
     apiRef.current = null;
@@ -617,6 +617,7 @@ function App() {
     setCurrentTrackLiked(false);
     setLoadingSection(null);
     setSectionMessage('');
+    setGentleLibrarySyncTarget(null);
     sectionLoadPendingRef.current = false;
     setPlaybackControlMode('passenger');
     setErrorMessage('');
@@ -885,8 +886,9 @@ function App() {
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
-        let maxPages = cached.length > 0 ? MAX_INCREMENTAL_LIBRARY_PAGES : MAX_INITIAL_LIBRARY_PAGES;
+        let maxPages = MAX_AUTO_LIBRARY_PAGES;
         let offset = 0;
+        let nextOffset = 0;
         let total = cached.length;
         let hitCache = false;
         let appendAfterCache = false;
@@ -909,13 +911,14 @@ function App() {
 
             appendAfterCache = true;
             offset = cached.length;
-            maxPages = MAX_INCREMENTAL_LIBRARY_PAGES;
+            maxPages = MAX_AUTO_LIBRARY_PAGES;
           }
         }
 
         for (let pagesFetched = 0; pagesFetched < maxPages; pagesFetched += 1) {
           const page = await api.getLikedSongs(LIBRARY_PAGE_SIZE, offset);
           total = page.total;
+          nextOffset = page.offset + page.limit;
 
           for (const item of page.items) {
             if (!item.track) continue;
@@ -931,7 +934,6 @@ function App() {
           setLikedSongs(progressEntries.map((e) => e.track));
           ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(progressEntries));
           if (total > 0) setInfoMessage(`Loading liked songs… ${inProgress} of ${total}`);
-          await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
 
         const seen = new Set<string>();
@@ -947,6 +949,7 @@ function App() {
           syncedAt: Date.now(),
           total,
           complete: !capped,
+          nextOffset,
         }));
         return { loaded: merged.length, total, capped, fromCache: false };
       }, 'loadSection:Liked Songs');
@@ -993,8 +996,9 @@ function App() {
 
       const loaded = await withApi(async (api) => {
         const newestAddedAt = cached[0]?.added_at ?? '';
-        let maxPages = cached.length > 0 ? MAX_INCREMENTAL_LIBRARY_PAGES : MAX_INITIAL_LIBRARY_PAGES;
+        let maxPages = MAX_AUTO_LIBRARY_PAGES;
         let offset = 0;
+        let nextOffset = 0;
         let total = cached.length;
         let hitCache = false;
         let appendAfterCache = false;
@@ -1017,13 +1021,14 @@ function App() {
 
             appendAfterCache = true;
             offset = cached.length;
-            maxPages = MAX_INCREMENTAL_LIBRARY_PAGES;
+            maxPages = MAX_AUTO_LIBRARY_PAGES;
           }
         }
 
         for (let pagesFetched = 0; pagesFetched < maxPages; pagesFetched += 1) {
           const page = await api.getLikedAlbums(LIBRARY_PAGE_SIZE, offset);
           total = page.total;
+          nextOffset = page.offset + page.limit;
 
           for (const item of page.items) {
             if (!item.album) continue;
@@ -1036,7 +1041,6 @@ function App() {
           const progressEntries = appendAfterCache ? [...cached, ...newEntries] : [...newEntries, ...cached];
           ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(progressEntries));
           if (total > 0) setInfoMessage(`Loading liked albums… ${newEntries.length + cached.length} of ${total}`);
-          await new Promise((r) => setTimeout(r, LIBRARY_PAGE_DELAY_MS));
         }
 
         const seen = new Set<string>();
@@ -1052,6 +1056,7 @@ function App() {
           syncedAt: Date.now(),
           total,
           complete: !capped,
+          nextOffset,
         }));
         return { loaded: merged.length, total, capped, fromCache: false };
       }, 'loadSection:Liked Albums');
@@ -1124,7 +1129,187 @@ function App() {
     finishSection('');
   };
 
-  const syncOneLibraryPage = async (nav: 'Liked Songs' | 'Liked Albums') => {
+  const waitForGentleLibrarySync = async (ms: number): Promise<boolean> => {
+    const deadline = Date.now() + ms;
+
+    while (!gentleLibrarySyncCancelRef.current && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1000, deadline - Date.now())));
+    }
+
+    return !gentleLibrarySyncCancelRef.current;
+  };
+
+  const waitForGentleLibraryRequestWindow = async (
+    nav: 'Liked Songs' | 'Liked Albums',
+    path: string,
+  ): Promise<boolean> => {
+    while (!gentleLibrarySyncCancelRef.current) {
+      const cooldown = getSpotifyCooldown(path);
+      if (cooldown) {
+        const message = `Gentle ${nav.toLowerCase()} fill paused for Spotify cooldown. Try again in ${formatCooldownRemaining(cooldown.until)}.`;
+        setInfoMessage(message);
+        setSectionMessage(message);
+        return false;
+      }
+
+      const budget = getSpotifyRequestBudget();
+      if (budget.used === 0) {
+        return true;
+      }
+
+      const waitMs = Math.max(1000, budget.resetInMs + GENTLE_LIBRARY_SYNC_IDLE_BUFFER_MS);
+      setSectionMessage(`Gentle ${nav.toLowerCase()} fill waiting ${Math.ceil(waitMs / 1000)}s for a quiet request window...`);
+      const keepGoing = await waitForGentleLibrarySync(waitMs);
+      if (!keepGoing) return false;
+    }
+
+    return false;
+  };
+
+  const runGentleLikedSongsSync = async (): Promise<void> => {
+    let cached = await loadCachedLikedSongs();
+    if (cached.length > 0) setLikedSongs(cached.map((entry) => entry.track));
+    let meta = await loadCacheMeta('likedSongs');
+    let offset = meta?.nextOffset ?? cached.length;
+
+    while (!gentleLibrarySyncCancelRef.current) {
+      if (meta?.complete) {
+        const message = `Liked Songs cache is complete with ${cached.length} songs.`;
+        setInfoMessage(message);
+        setSectionMessage(message);
+        return;
+      }
+
+      const canRequest = await waitForGentleLibraryRequestWindow('Liked Songs', '/me/tracks');
+      if (!canRequest) return;
+
+      const page = await withApi(async (api) => (
+        api.getLikedSongs(LIBRARY_PAGE_SIZE, offset)
+      ), 'gentleLibrarySync:Liked Songs');
+
+      if (!page) {
+        const message = `Kept ${cached.length} cached liked songs. Gentle fill paused; check the status message for cooldown details.`;
+        setInfoMessage(message);
+        setSectionMessage(message);
+        return;
+      }
+
+      const newEntries = page.items.flatMap((item) => (
+        item.track ? [{ added_at: item.added_at, track: item.track }] : []
+      ));
+      const seen = new Set<string>();
+      const merged = [...cached, ...newEntries].filter((entry) => {
+        if (seen.has(entry.track.id)) return false;
+        seen.add(entry.track.id);
+        return true;
+      });
+      const added = merged.length - cached.length;
+      const complete = !page.next || page.offset + page.limit >= page.total || merged.length >= page.total;
+      offset = page.offset + page.limit;
+      cached = merged;
+
+      setLikedSongs(merged.map((entry) => entry.track));
+      ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(merged));
+      ensureCacheWrite('Liked Songs metadata', await saveCacheMeta('likedSongs', {
+        syncedAt: Date.now(),
+        total: page.total,
+        complete,
+        nextOffset: offset,
+      }));
+
+      meta = { syncedAt: Date.now(), total: page.total, complete, nextOffset: offset };
+      const message = complete
+        ? `Liked Songs cache is complete with ${merged.length} songs.`
+        : `Gentle fill added ${added} liked songs. Cache has ${merged.length} of ${page.total}.`;
+      setInfoMessage(message);
+      setSectionMessage(message);
+      if (complete) return;
+
+      const keepGoing = await waitForGentleLibrarySync(GENTLE_LIBRARY_SYNC_PAGE_DELAY_MS);
+      if (!keepGoing) return;
+    }
+  };
+
+  const runGentleLikedAlbumsSync = async (): Promise<void> => {
+    let cached = await loadCachedLikedAlbums();
+    if (cached.length > 0) setLikedAlbums(cached.map((entry) => entry.album));
+    let meta = await loadCacheMeta('likedAlbums');
+    let offset = meta?.nextOffset ?? cached.length;
+
+    while (!gentleLibrarySyncCancelRef.current) {
+      if (meta?.complete) {
+        const message = `Liked Albums cache is complete with ${cached.length} albums.`;
+        setInfoMessage(message);
+        setSectionMessage(message);
+        return;
+      }
+
+      const canRequest = await waitForGentleLibraryRequestWindow('Liked Albums', '/me/albums');
+      if (!canRequest) return;
+
+      const page = await withApi(async (api) => (
+        api.getLikedAlbums(LIBRARY_PAGE_SIZE, offset)
+      ), 'gentleLibrarySync:Liked Albums');
+
+      if (!page) {
+        const message = `Kept ${cached.length} cached liked albums. Gentle fill paused; check the status message for cooldown details.`;
+        setInfoMessage(message);
+        setSectionMessage(message);
+        return;
+      }
+
+      const newEntries = page.items.flatMap((item) => (
+        item.album ? [{ added_at: item.added_at, album: item.album }] : []
+      ));
+      const seen = new Set<string>();
+      const merged = [...cached, ...newEntries].filter((entry) => {
+        if (seen.has(entry.album.id)) return false;
+        seen.add(entry.album.id);
+        return true;
+      });
+      const added = merged.length - cached.length;
+      const complete = !page.next || page.offset + page.limit >= page.total || merged.length >= page.total;
+      offset = page.offset + page.limit;
+      cached = merged;
+
+      setLikedAlbums(merged.map((entry) => entry.album));
+      ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(merged));
+      ensureCacheWrite('Liked Albums metadata', await saveCacheMeta('likedAlbums', {
+        syncedAt: Date.now(),
+        total: page.total,
+        complete,
+        nextOffset: offset,
+      }));
+
+      meta = { syncedAt: Date.now(), total: page.total, complete, nextOffset: offset };
+      const message = complete
+        ? `Liked Albums cache is complete with ${merged.length} albums.`
+        : `Gentle fill added ${added} liked albums. Cache has ${merged.length} of ${page.total}.`;
+      setInfoMessage(message);
+      setSectionMessage(message);
+      if (complete) return;
+
+      const keepGoing = await waitForGentleLibrarySync(GENTLE_LIBRARY_SYNC_PAGE_DELAY_MS);
+      if (!keepGoing) return;
+    }
+  };
+
+  const toggleGentleLibrarySync = async (nav: 'Liked Songs' | 'Liked Albums') => {
+    if (gentleLibrarySyncTarget === nav) {
+      gentleLibrarySyncCancelRef.current = true;
+      setGentleLibrarySyncTarget(null);
+      setLoadingSection((current) => (current === nav ? null : current));
+      const message = `Paused gentle ${nav.toLowerCase()} fill. Cached progress is saved.`;
+      setInfoMessage(message);
+      setSectionMessage(message);
+      return;
+    }
+
+    if (gentleLibrarySyncTarget) {
+      setInfoMessage(`Pause ${gentleLibrarySyncTarget} before starting ${nav}.`);
+      return;
+    }
+
     const activeTokens = useAppStore.getState().tokens;
     const tokenScopes = new Set(activeTokens?.scope.split(/\s+/).filter(Boolean) ?? []);
     if (!tokenScopes.has('user-library-read')) {
@@ -1135,7 +1320,7 @@ function App() {
     const cooldown = getSpotifyCooldown(nav === 'Liked Songs' ? '/me/tracks' : '/me/albums');
     if (cooldown) {
       void recordSpotifyDiagnostic({
-        context: `syncOneLibraryPage:${nav}`,
+        context: `gentleLibrarySync:${nav}`,
         method: 'LOCAL',
         path: cooldown.path,
         outcome: 'local-cooldown',
@@ -1147,75 +1332,21 @@ function App() {
       return;
     }
 
+    gentleLibrarySyncCancelRef.current = false;
+    setGentleLibrarySyncTarget(nav);
     setLoadingSection(nav);
-    setSectionMessage(`Syncing 50 ${nav.toLowerCase()}...`);
+    setSectionMessage(`Gentle ${nav.toLowerCase()} fill starting...`);
 
     try {
       if (nav === 'Liked Songs') {
-        const cached = await loadCachedLikedSongs();
-        if (cached.length > 0) setLikedSongs(cached.map((entry) => entry.track));
-
-        const loaded = await withApi(async (api) => {
-          const page = await api.getLikedSongs(LIBRARY_PAGE_SIZE, cached.length);
-          const newEntries = page.items.flatMap((item) => item.track ? [{ added_at: item.added_at, track: item.track }] : []);
-          const seen = new Set<string>();
-          const merged = [...cached, ...newEntries].filter((entry) => {
-            if (seen.has(entry.track.id)) return false;
-            seen.add(entry.track.id);
-            return true;
-          });
-          const complete = !page.next || merged.length >= page.total;
-          setLikedSongs(merged.map((entry) => entry.track));
-          ensureCacheWrite('Liked Songs', await saveCachedLikedSongs(merged));
-          ensureCacheWrite('Liked Songs metadata', await saveCacheMeta('likedSongs', {
-            syncedAt: Date.now(),
-            total: page.total,
-            complete,
-          }));
-          return { added: merged.length - cached.length, loaded: merged.length, total: page.total, complete };
-        }, 'syncOneLibraryPage:Liked Songs');
-
-        const message = loaded === null
-          ? `Kept ${cached.length} cached liked songs. Spotify sync paused; check the status message for cooldown details.`
-          : loaded.complete
-            ? `Synced liked songs. Cache now has all ${loaded.loaded}.`
-            : `Synced ${loaded.added} more liked songs. Cache now has ${loaded.loaded} of ${loaded.total}.`;
-        setInfoMessage(message);
-        setSectionMessage(message);
+        await runGentleLikedSongsSync();
         return;
       }
 
-      const cached = await loadCachedLikedAlbums();
-      if (cached.length > 0) setLikedAlbums(cached.map((entry) => entry.album));
-
-      const loaded = await withApi(async (api) => {
-        const page = await api.getLikedAlbums(LIBRARY_PAGE_SIZE, cached.length);
-        const newEntries = page.items.flatMap((item) => item.album ? [{ added_at: item.added_at, album: item.album }] : []);
-        const seen = new Set<string>();
-        const merged = [...cached, ...newEntries].filter((entry) => {
-          if (seen.has(entry.album.id)) return false;
-          seen.add(entry.album.id);
-          return true;
-        });
-        const complete = !page.next || merged.length >= page.total;
-        setLikedAlbums(merged.map((entry) => entry.album));
-        ensureCacheWrite('Liked Albums', await saveCachedLikedAlbums(merged));
-        ensureCacheWrite('Liked Albums metadata', await saveCacheMeta('likedAlbums', {
-          syncedAt: Date.now(),
-          total: page.total,
-          complete,
-        }));
-        return { added: merged.length - cached.length, loaded: merged.length, total: page.total, complete };
-      }, 'syncOneLibraryPage:Liked Albums');
-
-      const message = loaded === null
-        ? `Kept ${cached.length} cached liked albums. Spotify sync paused; check the status message for cooldown details.`
-        : loaded.complete
-          ? `Synced liked albums. Cache now has all ${loaded.loaded}.`
-          : `Synced ${loaded.added} more liked albums. Cache now has ${loaded.loaded} of ${loaded.total}.`;
-      setInfoMessage(message);
-      setSectionMessage(message);
+      await runGentleLikedAlbumsSync();
     } finally {
+      gentleLibrarySyncCancelRef.current = false;
+      setGentleLibrarySyncTarget((current) => (current === nav ? null : current));
       setLoadingSection((current) => (current === nav ? null : current));
     }
   };
@@ -1515,6 +1646,14 @@ function App() {
   const playbackEndpointCooldown = getSpotifyCooldown('/me/player');
   const playbackSettingsDisabled = !isPlaybackDriving || !playback?.device?.id || Boolean(playbackEndpointCooldown);
   const effectiveRepeat = pendingRepeat ?? (playback?.repeat_state ?? 'off');
+  const activeLibrarySync = isLibraryNav(activeNav) && gentleLibrarySyncTarget === activeNav;
+  const otherLibrarySyncRunning = Boolean(gentleLibrarySyncTarget && gentleLibrarySyncTarget !== activeNav);
+  const librarySyncLabel = activeLibrarySync
+    ? 'Pause Fill'
+    : otherLibrarySyncRunning
+      ? `Filling ${gentleLibrarySyncTarget}`
+      : 'Fill Cache';
+  const librarySyncDisabled = otherLibrarySyncRunning || (loadingSection === activeNav && !activeLibrarySync);
 
   return (
     <main className="app-shell" data-mode={mode}>
@@ -1605,6 +1744,9 @@ function App() {
           cooldownSummary={cooldownSummary}
           spotifyDiagnostics={spotifyDiagnostics}
           librarySyncAvailable={isLibraryNav(activeNav)}
+          librarySyncActive={activeLibrarySync}
+          librarySyncDisabled={librarySyncDisabled}
+          librarySyncLabel={librarySyncLabel}
           onNavSelect={(nav) => {
             setActiveNav(nav);
             if (nav === 'Settings') {
@@ -1618,9 +1760,9 @@ function App() {
           onClearSpotifyDiagnostics={() => {
             void clearSpotifyDiagnostics().then(() => setSpotifyDiagnostics([]));
           }}
-          onSyncLibraryPage={() => {
+          onToggleLibrarySync={() => {
             if (isLibraryNav(activeNav)) {
-              void syncOneLibraryPage(activeNav);
+              void toggleGentleLibrarySync(activeNav);
             }
           }}
           onSearch={(query) => {

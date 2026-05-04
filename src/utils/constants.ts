@@ -24,10 +24,6 @@ export const POLL_INTERVAL_MS = 15_000;
 export const PAUSED_PLAYBACK_POLL_INTERVAL_MS = 60_000;
 export const IDLE_PLAYBACK_POLL_INTERVAL_MS = 120_000;
 
-// Delay between library-sync page fetches. 1000ms is deliberately slower than
-// the theoretical limit so playback, search, and UI probes still have room.
-export const LIBRARY_PAGE_DELAY_MS = 1_000;
-
 // Proactive client-side request budget for Spotify's rolling 30s window.
 // Spotify does not publish the exact number and it varies by quota mode.
 export const RATE_LIMIT_BUDGET = 40;

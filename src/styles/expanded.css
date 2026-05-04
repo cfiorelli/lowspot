@@ -70,6 +70,11 @@
   min-width: 74px;
 }
 
+.sync-page-button.sync-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+}
+
 .content-header form {
   display: flex;
   gap: 6px;
