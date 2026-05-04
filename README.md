@@ -1,8 +1,26 @@
 # lowspot
 
-## Quick Start
+Text-first, low-noise Spotify desktop client for macOS. Compact by design — a slim playback bar with search, library, and queue when you need them.
 
-Text-first, low-noise Spotify desktop client built with Tauri 2, React, TypeScript, Vite, and Zustand.
+---
+
+## Install from DMG (macOS)
+
+If someone sent you a `.dmg` file:
+
+1. Open the DMG and drag **lowspot** into your Applications folder.
+2. On first launch macOS may block the app because it is unsigned. **Right-click lowspot → Open → Open** to allow it.
+3. Log in with the Spotify account your host has added to their Spotify Developer app.
+4. Approve the requested Spotify permissions.
+5. Click **lowspot off** in the bottom-left corner to switch it **on** — this connects lowspot as your Spotify playback device. Then hit Play or search for something.
+
+> **Requirements:** Spotify Premium account. macOS 11+.
+
+---
+
+## Quick Start (build from source)
+
+**Prerequisites:** Spotify Premium, macOS, Node.js 18+, Rust toolchain.
 
 **Prerequisites:** Spotify Premium account, macOS for the desktop app, Node.js 18+, and the Rust toolchain.
 
