@@ -14,7 +14,13 @@ This document defines the macOS release path. It is intentionally conservative u
   npm run tauri:build
   ```
 - Inspect `src-tauri/target/release/bundle/` for generated `.dmg` or `.app` artifacts.
-- macOS Gatekeeper will warn because these builds are not signed/notarized.
+- macOS Gatekeeper will warn because these builds are ad-hoc signed, not Developer ID signed/notarized.
+- Verify the app bundle before sharing:
+  ```bash
+  codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/lowspot.app
+  spctl -a -vvv -t open src-tauri/target/release/bundle/macos/lowspot.app
+  ```
+  `codesign` should pass. `spctl` is expected to reject ad-hoc alpha builds until a Developer ID signed and notarized release path exists.
 
 3. GitHub Releases
 - Attach the Tauri-generated macOS artifact to a GitHub release.
@@ -24,6 +30,7 @@ This document defines the macOS release path. It is intentionally conservative u
   - Development-mode Spotify apps allow only allowlisted users.
   - Users should stop testing if a cooldown appears.
 - For private alpha builds, the Spotify Client ID is baked into the artifact at build time. Add each tester to the Spotify app before distributing the DMG.
+- Published GitHub Release notes must say the DMG is an ad-hoc signed private alpha and may need **System Settings -> Privacy & Security -> Open Anyway** on first launch.
 
 4. Signed/notarized releases
 - Future production path.
@@ -54,7 +61,7 @@ This document defines the macOS release path. It is intentionally conservative u
 - Users installing a DMG use the Client ID baked into that build.
 - A shared Spotify app in development mode is limited to allowlisted users.
 - A shared app in extended quota mode requires Spotify approval.
-- Unsigned/private-alpha distribution should stay small and explicit about Gatekeeper warnings.
+- Ad-hoc signed private-alpha distribution should stay small and explicit about Gatekeeper warnings.
 
 ## Private Alpha User Instructions
 

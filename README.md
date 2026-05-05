@@ -15,7 +15,7 @@ Text-first, low-noise Spotify desktop client for macOS. A slim playback bar that
 1. Click the download link above and download the `.dmg` file from the Assets section.
 2. Open the downloaded file. Drag **lowspot** into your Applications folder.
 3. Open **Applications**, find lowspot, and double-click it.
-4. macOS will warn you the app is from an unidentified developer. Click **Done**, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. On older macOS: right-click the app → **Open** → **Open**.
+4. macOS may warn you the app is from an unidentified developer. Click **Done**, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. On older macOS: right-click the app → **Open** → **Open**.
 5. Log in with your Spotify account and approve the permissions.
 6. Click **lowspot off** in the bottom-left to switch it **on** — this makes lowspot your Spotify playback device. Hit Play or search for a song to start.
 
@@ -104,9 +104,11 @@ To share a build with an allowlisted Spotify user:
    npm run tauri:build
    ```
 3. Share the DMG from `src-tauri/target/release/bundle/dmg/`.
-4. Recipient: right-click `lowspot.app`, then choose **Open** to bypass the unsigned-app warning.
+4. Recipient: if macOS blocks the first launch, open **System Settings → Privacy & Security** and choose **Open Anyway** for lowspot.
 
 DMG users do not need `.env`. The Client ID is baked into the build.
+
+Current alpha DMGs are ad-hoc signed, not Developer ID signed or notarized. A quarantined download should be installable through macOS Privacy & Security, but fully frictionless launch requires an Apple Developer certificate and notarization.
 
 > **Note:** Spotify Developer apps start in Development Mode, which restricts access to allowlisted accounts. To distribute beyond your allowlist, apply for Extended Quota Mode in the Spotify Dashboard.
 
@@ -157,7 +159,7 @@ Spotify Web API calls are treated as scarce. lowspot prefers cached library data
 | OAuth redirect error | Confirm `http://127.0.0.1:7878/callback` is in Spotify Dashboard |
 | 429 rate limit | Wait for the displayed cooldown, or switch to mock mode |
 | Playback buttons disabled | Click **lowspot off** so it becomes **lowspot on**, then choose music |
-| macOS blocks app | Right-click, then choose **Open** on first launch |
+| macOS blocks app | Use **System Settings → Privacy & Security → Open Anyway** |
 
 ## Spotify Scopes
 

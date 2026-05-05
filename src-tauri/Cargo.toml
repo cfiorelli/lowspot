@@ -1,6 +1,6 @@
 [package]
 name = "lowspot"
-version = "0.1.0"
+version = "0.1.1"
 description = "lowspot desktop client"
 authors = ["lowspot contributors"]
 license = ""
