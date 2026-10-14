@@ -92,7 +92,7 @@
 - If Web Playback SDK fails, confirm app still controls existing active Spotify devices.
 
 7. Window sizing
-- Confirm Tauri minimum size is enforced around 360x64.
+- Confirm the minimum window size is enforced (520x300 in `tauri.conf.json`; the app raises it to 560x300 at runtime via `MIN_SIZE`).
 - Confirm lean dimensions are compact and expanded dimensions are larger.
 
 8. No-art compliance
