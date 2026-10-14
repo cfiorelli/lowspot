@@ -23,9 +23,9 @@ Text-first, low-noise Spotify desktop client for macOS. A slim playback bar that
 
 ## Quick Start (build from source)
 
-**Prerequisites:** Spotify Premium, macOS, Node.js 18+, Rust toolchain.
+**Prerequisites:** Spotify Premium account, macOS for the desktop app, Node.js 20.19+ or 22.13+ (see `.nvmrc`), and the Rust toolchain.
 
-**Prerequisites:** Spotify Premium account, macOS for the desktop app, Node.js 18+, and the Rust toolchain.
+> No Spotify account handy? `npm install && npm run tauri:dev:mock` (or `npm run dev:mock` in a browser) runs the full UI on local fixtures with no credentials.
 
 ### Step 1: Create a Spotify Developer app
 
