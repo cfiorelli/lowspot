@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.2",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
   "scripts": {
     "dev": "vite",
     "dev:mock": "VITE_LOWSPOT_MOCK=1 vite",
